@@ -1,0 +1,22 @@
+# hwet-assistant
+
+내 Android 폰에서 동작하는 개인 AI 비서 앱. Expo(React Native, SDK 58) + Claude API(도구 호출).
+
+## 기능
+- **AI 대화**: Claude Messages API, 도구 호출 루프 (`app/src/agent/agent.ts`)
+- **할 일 / 메모**: 로컬 SQLite (`app/src/builtin/tools.ts`)
+- **내 앱 연동**: 매니페스트(JSON)로 등록한 앱의 기능을 도구로 사용 → [`docs/connector-spec.md`](docs/connector-spec.md)
+- **아침 브리핑 (선택)**: 설정에서 켜면 매일 지정 시각에 알림, 눌러서 열면 요약 생성 (기본 꺼짐)
+
+## 개발
+```bash
+cd app
+npm install
+npx expo run:android        # 개발 빌드 (알림 등 네이티브 기능 때문에 Expo Go 대신 권장)
+npx tsc --noEmit && npx eslint src
+```
+처음 실행하면 **설정 탭에서 Claude API 키를 입력**하세요. 키는 기기 보안 저장소에만 저장됩니다.
+
+## 앱 이름·패키지
+임시 이름 `hwet-assistant` / `com.hwetj.assistant` 입니다. 이름은 `app/app.json` 의 `name`, 설치 후에는 바꾸기 어려운
+패키지명(`android.package`)은 첫 설치 전에 확정하세요.
