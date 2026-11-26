@@ -7,6 +7,7 @@
 - **할 일 / 메모**: 로컬 SQLite (`app/src/builtin/tools.ts`)
 - **내 앱 연동**: 매니페스트(JSON)로 등록한 앱의 기능을 도구로 사용 → [`docs/connector-spec.md`](docs/connector-spec.md)
 - **캘린더 연동**: 내 `calendar` 앱에 딥링크로 일정 초안 열기, 구글 캘린더 조회·추가 → [`docs/google-calendar-setup.md`](docs/google-calendar-setup.md)
+- **LeaseLog 연동**: "101호 45만원 입금", "박지후 세입자 등록"처럼 말하면 월세 앱 LeaseLog 의 **값이 채워진 확인 화면**을 열어 줍니다. 저장은 LeaseLog 에서 사용자가 직접 누르며, LeaseLog 데이터는 비서로 오지 않습니다 (LeaseLog 1.6.0 이상 필요, 프로토콜은 LeaseLog 저장소 `CLAUDE.md`)
 - **아침 브리핑 (선택)**: 설정에서 켜면 매일 지정 시각에 알림, 눌러서 열면 요약 생성 (기본 꺼짐)
 
 ## 개발
