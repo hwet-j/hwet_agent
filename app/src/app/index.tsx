@@ -46,11 +46,20 @@ function toItems(history: History): Item[] {
   return items;
 }
 
-function askConfirm(tool: AgentTool, input: Record<string, unknown>): Promise<boolean> {
+async function askConfirm(tool: AgentTool, input: Record<string, unknown>): Promise<boolean> {
+  // 도구가 사람이 읽는 설명(예: 삭제할 일정의 제목·시간)을 줄 수 있으면 그걸 보여 준다. 실패하면 입력 JSON.
+  let detail: string | null = null;
+  if (tool.preview) {
+    try {
+      detail = await tool.preview(input);
+    } catch {
+      detail = null;
+    }
+  }
   return new Promise((resolve) => {
     Alert.alert(
       `${tool.label} 실행할까요?`,
-      JSON.stringify(input, null, 2).slice(0, 600),
+      (detail ?? JSON.stringify(input, null, 2)).slice(0, 800),
       [
         { text: '거부', style: 'cancel', onPress: () => resolve(false) },
         { text: '실행', onPress: () => resolve(true) },

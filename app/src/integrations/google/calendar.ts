@@ -1,4 +1,4 @@
-import { buildEventBody, type NewEvent } from '../calendar/pure';
+import { buildEventBody, buildEventPatch, checkEventId, normalizeChanges, type GEventLite, type NewEvent } from '../calendar/pure';
 import { freshAccessToken } from './auth';
 
 const BASE = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
@@ -65,4 +65,33 @@ export async function addEvent(e: NewEvent) {
   const body = buildEventBody(e, deviceTimeZone());
   const created = (await call('', { method: 'POST', body: JSON.stringify(body) })) as GEvent;
   return { created: slim(created), link: created.htmlLink };
+}
+
+const eventPath = (id: string) => `/${encodeURIComponent(checkEventId(id))}`;
+
+/** 일정 하나를 조회한다 (확인 창 미리보기·수정 계산용). */
+export async function getEvent(id: unknown): Promise<GEvent> {
+  return (await call(eventPath(id as string))) as GEvent;
+}
+
+/** 확인 창에 보여줄 현재 일정 설명용 */
+export async function getEventLite(id: unknown): Promise<GEventLite> {
+  return getEvent(id) as Promise<GEventLite>;
+}
+
+/** 일정 수정. 반복 일정의 한 회차 id 를 주면 그 회차만 바뀐다. 참석자에게 알림 메일은 보내지 않는다. */
+export async function updateEvent(id: unknown, input: Record<string, unknown>) {
+  const changes = normalizeChanges(input); // 먼저 검증 (네트워크 호출 전에 실패)
+  const existing = await getEvent(id);
+  if ((existing as { status?: string }).status === 'cancelled') throw new Error('이미 삭제된 일정이에요');
+  const body = buildEventPatch(existing as GEventLite, changes, deviceTimeZone());
+  const updated = (await call(`${eventPath(id as string)}?sendUpdates=none`, { method: 'PATCH', body: JSON.stringify(body) })) as GEvent;
+  return { updated: slim(updated), link: updated.htmlLink };
+}
+
+/** 일정 삭제. 반복 일정의 한 회차 id 를 주면 그 회차만 삭제된다. */
+export async function deleteEvent(id: unknown) {
+  const existing = await getEvent(id); // 존재 확인 + 결과에 삭제한 일정 정보를 돌려주기 위해
+  await call(`${eventPath(id as string)}?sendUpdates=none`, { method: 'DELETE' });
+  return { deleted: slim(existing) };
 }

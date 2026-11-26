@@ -8,5 +8,7 @@ export type AgentTool = {
   needsConfirm: boolean;
   /** 확인 창에 보여줄 사람이 읽는 설명 */
   label: string;
+  /** 확인 창에 보여줄 사람이 읽는 상세 설명 (예: 삭제할 일정의 제목·시간). 실패하면 입력 JSON 을 대신 보여준다. */
+  preview?: (input: Record<string, unknown>) => Promise<string>;
   run: (input: Record<string, unknown>) => Promise<unknown>;
 };

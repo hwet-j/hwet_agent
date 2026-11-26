@@ -23,12 +23,15 @@ OAuth 동의 화면이 **테스트** 상태이면 구글 정책상 **리프레�
 ([구글 문서: Manage App Audience](https://support.google.com/cloud/answer/15549945?hl=en))
 
 ## 3. SHA-1 지문
-- 로컬 개발 빌드: `cd app/android && ./gradlew signingReport` (또는 사용하는 keystore 의 `keytool -list -v`)
-- EAS 빌드: `npx eas-cli credentials` 에서 확인
-- 나중에 서명 키를 바꾸면 클라이언트 ID 의 SHA-1 도 함께 바꿔야 합니다.
+GitHub Actions 가 빌드한 APK 의 **서명 인증서 SHA-1** 이 릴리스 설명(Releases → "비서 APK #N")과 빌드 로그
+("Signing certificate fingerprint" 단계)에 출력됩니다. 그 값을 3번의 SHA-1 칸에 넣으세요.
+- 클라이언트 ID 를 만든 뒤 저장소 **Settings → Secrets and variables → Actions → Variables** 에
+  `GOOGLE_CLIENT_ID_ANDROID` 를 추가하고 워크플로를 다시 실행(Run workflow)하면 구글 연결이 켜진 APK 가 만들어집니다.
+- 서명 키를 바꾸면 클라이언트 ID 의 SHA-1 도 함께 바꿔야 합니다. (현재는 Expo 기본 debug 키로 서명되어 빌드마다 같은 지문이 나옵니다.)
 
 ## 4. 동작 방식
 - 로그인: OAuth 2.0 + PKCE (`expo-auth-session`). 토큰은 `expo-secure-store` 에만 저장됩니다.
-- 비서 도구: `gcal_list_events`(조회, 확인 없음), `gcal_add_event`(추가, 실행 전 확인), `calendar_app_new_event`(캘린더 앱 열기, 저장은 사용자가 누름)
-- 캘린더 앱에는 **앱의 다음 동기화 때** 나타납니다.
+- 비서 도구: `gcal_list_events`(조회, 확인 없음), `gcal_add_event`(추가), `gcal_update_event`(수정), `gcal_delete_event`(삭제) — 추가·수정·삭제는 실행 전에 확인 창을 띄우고, 수정·삭제는 **대상 일정의 제목·시간을 보여 줍니다**. `calendar_app_new_event`(캘린더 앱 열기, 저장은 사용자가 누름)
+- 수정·삭제는 먼저 조회해서 얻은 일정 id 로만 동작합니다. 반복 일정은 그 회차만 바뀌거나 삭제됩니다. 수정·삭제 시 참석자에게 알림 메일은 보내지 않습니다.
+- 캘린더 앱에는 **앱의 다음 동기화 때**(설정 → 동기화) 추가·수정·삭제가 반영됩니다. 삭제 반영은 calendar 앱 PR #4 이후 버전이 필요합니다.
 - 비서가 읽은 일정(제목·시각·장소)은 Claude API 로 전송됩니다. 참석자 이메일 등은 전달하지 않습니다.
