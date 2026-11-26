@@ -8,6 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { applyBriefing } from '@/core/briefing';
+import { GOOGLE_CLIENT_ID, clearGoogle, getGoogleEmail, isGoogleConnected } from '@/integrations/google/auth';
+import { useGoogleLogin } from '@/integrations/google/useGoogleLogin';
 import {
   DEFAULT_MODEL,
   clearApiKey,
@@ -28,6 +30,9 @@ export default function SettingsScreen() {
   const [brEnabled, setBrEnabled] = useState(false);
   const [hour, setHour] = useState('8');
   const [minute, setMinute] = useState('0');
+  const [gConnected, setGConnected] = useState(false);
+  const [gEmail, setGEmail] = useState<string | null>(null);
+  const googleLogin = useGoogleLogin();
 
   useEffect(() => {
     (async () => {
@@ -37,6 +42,8 @@ export default function SettingsScreen() {
       setBrEnabled(b.enabled);
       setHour(String(b.hour));
       setMinute(String(b.minute));
+      setGConnected(await isGoogleConnected());
+      setGEmail(await getGoogleEmail());
     })();
   }, []);
 
@@ -46,6 +53,18 @@ export default function SettingsScreen() {
     setKey('');
     setHasKey(true);
     Alert.alert('저장됨', 'API 키를 기기 보안 저장소에 저장했어요.');
+  };
+
+  const connectGoogle = async () => {
+    try {
+      const r = await googleLogin();
+      if (r) {
+        setGConnected(true);
+        setGEmail(r.email ?? null);
+      }
+    } catch (e) {
+      Alert.alert('구글 연결 실패', e instanceof Error ? e.message : String(e));
+    }
   };
 
   const saveBriefing = async (enabled: boolean) => {
@@ -88,6 +107,27 @@ export default function SettingsScreen() {
 
           <ThemedText type="smallBold">모델</ThemedText>
           <Field value={model} onChangeText={setModelText} onEndEditing={() => setModel(model)} />
+
+          <ThemedText type="smallBold">구글 캘린더 (선택)</ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {gConnected
+              ? `연결됨${gEmail ? ` · ${gEmail}` : ''}. 비서가 일정을 조회하고, 확인 후 추가할 수 있어요.`
+              : GOOGLE_CLIENT_ID
+                ? '연결하면 비서가 내 구글 캘린더(캘린더 앱과 동기화되는 캘린더)를 조회·추가할 수 있어요.'
+                : '구글 클라이언트 ID가 설정되지 않았어요. docs/google-calendar-setup.md 를 참고하세요.'}
+          </ThemedText>
+          {gConnected ? (
+            <Button
+              title="연결 해제"
+              onPress={async () => {
+                await clearGoogle();
+                setGConnected(false);
+                setGEmail(null);
+              }}
+            />
+          ) : (
+            <Button title="구글 계정 연결" disabled={!GOOGLE_CLIENT_ID} onPress={connectGoogle} />
+          )}
 
           <ThemedText type="smallBold">아침 브리핑 (선택)</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">

@@ -6,6 +6,7 @@
 - **AI 대화**: Claude Messages API, 도구 호출 루프 (`app/src/agent/agent.ts`)
 - **할 일 / 메모**: 로컬 SQLite (`app/src/builtin/tools.ts`)
 - **내 앱 연동**: 매니페스트(JSON)로 등록한 앱의 기능을 도구로 사용 → [`docs/connector-spec.md`](docs/connector-spec.md)
+- **캘린더 연동**: 내 `calendar` 앱에 딥링크로 일정 초안 열기, 구글 캘린더 조회·추가 → [`docs/google-calendar-setup.md`](docs/google-calendar-setup.md)
 - **아침 브리핑 (선택)**: 설정에서 켜면 매일 지정 시각에 알림, 눌러서 열면 요약 생성 (기본 꺼짐)
 
 ## 개발
@@ -13,7 +14,7 @@
 cd app
 npm install
 npx expo run:android        # 개발 빌드 (알림 등 네이티브 기능 때문에 Expo Go 대신 권장)
-npx tsc --noEmit && npx eslint src
+npx tsc --noEmit && npx eslint src && npm test
 ```
 처음 실행하면 **설정 탭에서 Claude API 키를 입력**하세요. 키는 기기 보안 저장소에만 저장됩니다.
 

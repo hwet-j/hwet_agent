@@ -23,6 +23,7 @@ import { ThemedView } from '@/components/themed-view';
 import { BRIEFING_PROMPT } from '@/core/briefing';
 import { getApiKey, getModel } from '@/core/settings';
 import { loadConnectorTools } from '@/connectors/registry';
+import { integrationTools } from '@/integrations';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -94,7 +95,7 @@ export default function ChatScreen() {
     setBusy(true);
     setInput('');
     try {
-      const tools = [...builtinTools, ...(await loadConnectorTools())];
+      const tools = [...builtinTools, ...(await integrationTools()), ...(await loadConnectorTools())];
       const final = await runTurn({
         apiKey,
         model: await getModel(),

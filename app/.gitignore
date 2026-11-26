@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# 로컬 환경변수 (구글 클라이언트 ID 등). 예시는 .env.example
+.env
