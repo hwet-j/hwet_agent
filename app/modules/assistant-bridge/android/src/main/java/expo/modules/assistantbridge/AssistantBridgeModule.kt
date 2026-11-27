@@ -1,7 +1,7 @@
 package expo.modules.assistantbridge
 
 import android.net.Uri
-import expo.modules.kotlin.Exceptions
+import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
