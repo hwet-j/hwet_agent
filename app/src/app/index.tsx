@@ -120,9 +120,18 @@ export default function ChatScreen() {
       await saveHistory(final);
     } catch (e) {
       // 실패해도 지금까지의 대화는 보존하되, 끝이 tool_use 로 끊긴 불완전 상태는 저장하지 않는다.
-      setError(e instanceof Error ? e.message : String(e));
-      historyRef.current = trimHistory(await loadHistory());
-      setHistory(historyRef.current);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/thinking/i.test(msg) && /signature|different conversation/i.test(msg)) {
+        // 예전 버전이 저장한 대화 기록과 맞지 않는 경우: 기록을 비우고 다시 시도하도록 안내
+        await saveHistory([]);
+        historyRef.current = [];
+        setHistory([]);
+        setError('이전 대화 기록과 호환되지 않아 기록을 정리했어요. 같은 말을 한 번 더 보내 주세요.');
+      } else {
+        setError(msg);
+        historyRef.current = trimHistory(await loadHistory());
+        setHistory(historyRef.current);
+      }
     } finally {
       busyRef.current = false;
       setBusy(false);

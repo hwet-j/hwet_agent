@@ -1,9 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { fetch as expoFetch } from 'expo/fetch';
 
+import { stripThinking, type History } from './history';
 import type { AgentTool } from './tool';
 
-export type History = Anthropic.MessageParam[];
+export type { History } from './history';
 
 const MAX_STEPS = 8;
 const MAX_RESULT_CHARS = 8000;
@@ -69,15 +70,21 @@ export async function runTurn(opts: RunOptions): Promise<History> {
     input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
   }));
 
-  const history: History = [...opts.history, { role: 'user', content: opts.userText }];
+  // 이전 턴의 thinking 블록은 빼서 보낸다 (system·tools 가 바뀌면 서명 검사에서 400, history.ts 참고).
+  const history: History = [...stripThinking(opts.history), { role: 'user', content: opts.userText }];
   opts.onUpdate(history);
+
+  // 이 턴 동안 system 은 고정한다. 도구 호출 반복마다 현재 시각이 바뀌면
+  // 같은 턴의 thinking 블록이 "다른 대화에 묶였다"는 400 으로 거부된다.
+  const system = systemPrompt();
 
   for (let step = 0; step < MAX_STEPS; step++) {
     const res = await client.messages.create(
       {
         model: opts.model,
-        max_tokens: 2048,
-        system: systemPrompt(),
+        // 적응형 thinking 의 토큰도 max_tokens 에 포함되므로 여유 있게 잡는다.
+        max_tokens: 4096,
+        system,
         tools: apiTools,
         messages: history,
       },
@@ -86,7 +93,7 @@ export async function runTurn(opts: RunOptions): Promise<History> {
     history.push({ role: 'assistant', content: res.content });
     opts.onUpdate([...history]);
 
-    if (res.stop_reason !== 'tool_use') return history;
+    if (res.stop_reason !== 'tool_use') return stripThinking(history);
 
     const results: Anthropic.ToolResultBlockParam[] = [];
     for (const block of res.content) {
@@ -118,7 +125,7 @@ export async function runTurn(opts: RunOptions): Promise<History> {
     content: '도구 호출이 너무 많이 반복되어 중단했어요. 요청을 조금 더 구체적으로 다시 말씀해 주세요.',
   });
   opts.onUpdate([...history]);
-  return history;
+  return stripThinking(history);
 }
 
 /** 대화가 길어질 때 오래된 "턴" 단위로 잘라낸다. tool_use/tool_result 쌍이 깨지지 않도록 사용자 텍스트 메시지에서 시작한다. */
