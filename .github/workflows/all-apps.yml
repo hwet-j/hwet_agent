@@ -78,5 +78,5 @@ jobs:
             echo
             echo "PC 에서 한 번에 받으려면 \`all-apps.zip\`."
           } > notes.md
-          gh release delete apps-latest --cleanup-tag -y 2>/dev/null || true
-          gh release create apps-latest out/* --title "전체 앱 최신 APK" --notes-file notes.md --prerelease --target "${GITHUB_SHA}"
+          gh release delete apps-latest -R "$GITHUB_REPOSITORY" --cleanup-tag -y 2>/dev/null || true
+          gh release create apps-latest out/* -R "$GITHUB_REPOSITORY" --title "전체 앱 최신 APK" --notes-file notes.md --prerelease --target "${GITHUB_SHA}"
