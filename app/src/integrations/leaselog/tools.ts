@@ -1,7 +1,7 @@
 import { Linking } from 'react-native';
 
 import type { AgentTool } from '@/agent/tool';
-import { buildLeaselogLink, type LeaselogOp } from './pure';
+import { buildLeaselogLink, SHOW_SCREENS, type LeaselogOp } from './pure';
 
 async function open(op: LeaselogOp, input: Record<string, unknown>, what: string) {
   const url = buildLeaselogLink(op, input); // 입력 검증 실패 시 여기서 예외 → 비서가 사용자에게 설명
@@ -12,7 +12,10 @@ async function open(op: LeaselogOp, input: Record<string, unknown>, what: string
   }
   return {
     opened: true,
-    note: `LeaseLog 에서 ${what} 확인 화면을 열었어요. 사용자가 내용을 확인하고 저장해야 반영됩니다. 아직 저장되지 않았어요.`,
+    note:
+      op === 'show'
+        ? 'LeaseLog 에서 요청한 화면을 열었어요. 숫자는 화면에서 확인하라고 안내하세요. (비서는 값을 읽을 수 없어요)'
+        : `LeaseLog 에서 ${what} 확인 화면을 열었어요. 사용자가 내용을 확인하고 저장해야 반영됩니다. 아직 저장되지 않았어요.`,
   };
 }
 
@@ -22,6 +25,27 @@ const where = {
 };
 
 export const leaselogTools: AgentTool[] = [
+  {
+    name: 'leaselog_show_screen',
+    label: 'LeaseLog 화면 열기',
+    description:
+      '월세 앱 LeaseLog 의 조회 화면을 연다(데이터는 바뀌지 않음). 비서는 LeaseLog 의 숫자를 읽을 수 없으므로 "저번 달 월 수입", "이번 달 미납", ' +
+      '"납부 내역" 같은 질문에는 값을 추측하지 말고 이 도구로 해당 화면을 열어 주고, 숫자는 화면에서 확인하라고 안내한다. ' +
+      'income=월별 수입(연도별 월 합계, month 를 주면 그 달이 강조됨) · payments=납부 내역(월별 청구·수금, filter 로 전체/미납/완납) · home/rooms/tenants/utilities. ' +
+      '"저번 달"은 현재 시각 기준으로 YYYY-MM 으로 계산해 month 에 넣는다(1월이면 전년 12월).',
+    needsConfirm: false,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        screen: { type: 'string', enum: [...SHOW_SCREENS], description: '열 화면' },
+        month: { type: 'string', description: '대상 월 YYYY-MM. income 에서는 그 달 강조, payments 에서는 그 달 내역' },
+        year: { type: 'integer', description: 'income 에서 연도만 지정할 때' },
+        filter: { type: 'string', enum: ['all', 'unpaid', 'paid'], description: 'payments 필터' },
+      },
+      required: ['screen'],
+    },
+    run: (input) => open('show', input, '화면'),
+  },
   {
     name: 'leaselog_record_payment',
     label: 'LeaseLog 월세 납부 기록',

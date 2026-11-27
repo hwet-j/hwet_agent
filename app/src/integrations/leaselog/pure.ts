@@ -7,7 +7,10 @@
  * 보증금 반환 계좌·차량번호·보호자 상세 같은 민감 정보는 이 경로로 보내지 않는다 (필드 허용 목록에 없음).
  */
 
-export type LeaselogOp = 'record_payment' | 'register_tenant';
+export type LeaselogOp = 'record_payment' | 'register_tenant' | 'show';
+
+export const SHOW_SCREENS = ['income', 'payments', 'home', 'rooms', 'tenants', 'utilities'] as const;
+const SHOW_FILTERS = ['all', 'unpaid', 'paid'] as const;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const YM = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -87,6 +90,28 @@ export function buildTenantRequest(i: Record<string, unknown>) {
   return out;
 }
 
+/** 조회용 화면 열기 요청. 데이터를 바꾸지 않고, LeaseLog 도 값을 돌려주지 않는다. */
+export function buildShowRequest(i: Record<string, unknown>) {
+  const screen = i.screen;
+  if (typeof screen !== 'string' || !(SHOW_SCREENS as readonly string[]).includes(screen)) {
+    throw new Error(`screen 은 ${SHOW_SCREENS.join(', ')} 중 하나여야 해요`);
+  }
+  const out: Record<string, unknown> = { screen };
+  if (i.month != null) {
+    if (typeof i.month !== 'string' || !YM.test(i.month)) throw new Error('month 는 YYYY-MM 형식이어야 해요');
+    out.ym = i.month;
+  }
+  if (i.year != null) {
+    if (typeof i.year !== 'number' || !Number.isInteger(i.year) || i.year < 2000 || i.year > 2100) throw new Error('year 는 2000~2100 사이 정수여야 해요');
+    out.year = i.year;
+  }
+  if (i.filter != null) {
+    if (typeof i.filter !== 'string' || !(SHOW_FILTERS as readonly string[]).includes(i.filter)) throw new Error(`filter 는 ${SHOW_FILTERS.join(', ')} 중 하나여야 해요`);
+    out.filter = i.filter;
+  }
+  return out;
+}
+
 const newId = (now: number, rnd: () => number) => `${now.toString(36)}${rnd().toString(36).slice(2, 8)}`;
 
 /** 요청 JSON 을 인텐트용 딥링크로 만든다. now/rnd 는 테스트에서 주입. */
@@ -96,7 +121,7 @@ export function buildLeaselogLink(
   now: number = Date.now(),
   rnd: () => number = Math.random,
 ): string {
-  const body = op === 'record_payment' ? buildPaymentRequest(input) : buildTenantRequest(input);
+  const body = op === 'record_payment' ? buildPaymentRequest(input) : op === 'show' ? buildShowRequest(input) : buildTenantRequest(input);
   const cmd = { v: 1, id: newId(now, rnd), ts: now, op, ...body };
   return `rentmanager://assistant?cmd=${encodeURIComponent(JSON.stringify(cmd))}`;
 }

@@ -83,3 +83,32 @@ test('링크: 요청 크기 제한(8000자, LeaseLog 쪽 한도) 안에 들어�
   const url = buildLeaselogLink('register_tenant', { name: 'ㄱ'.repeat(100), phone: '1'.repeat(100), guardian: 'ㄴ'.repeat(100), room: 'ㄷ'.repeat(100), building: 'ㄹ'.repeat(100) });
   assert.ok(decodeURIComponent(url.split('cmd=')[1]).length < 8000);
 });
+
+import { buildShowRequest } from '../src/integrations/leaselog/pure.ts';
+
+test('화면 열기 요청: 필드 매핑(month → ym), 선택값 생략', () => {
+  assert.deepEqual(buildShowRequest({ screen: 'income', month: '2026-10' }), { screen: 'income', ym: '2026-10' });
+  assert.deepEqual(buildShowRequest({ screen: 'income', year: 2025 }), { screen: 'income', year: 2025 });
+  assert.deepEqual(buildShowRequest({ screen: 'payments', month: '2026-11', filter: 'unpaid' }), { screen: 'payments', ym: '2026-11', filter: 'unpaid' });
+  assert.deepEqual(buildShowRequest({ screen: 'rooms', extra: 1 }), { screen: 'rooms' });
+});
+
+test('화면 열기 요청 검증: 알 수 없는 화면·월·연도·필터 거부', () => {
+  for (const [bad, re] of [
+    [{}, /screen/],
+    [{ screen: 'delete_all' }, /screen/],
+    [{ screen: 'income', month: '2026-13' }, /month/],
+    [{ screen: 'income', month: 202610 }, /month/],
+    [{ screen: 'income', year: 1999 }, /year/],
+    [{ screen: 'income', year: '2025' }, /year/],
+    [{ screen: 'payments', filter: 'x' }, /filter/],
+  ] as const) assert.throws(() => buildShowRequest(bad as never), re, JSON.stringify(bad));
+});
+
+test('링크: show 요청은 v/id/ts/op 와 함께 인코딩된다', () => {
+  const c = decode(buildLeaselogLink('show', { screen: 'income', month: '2026-10' }, 1_700_000_000_000, () => 0.5));
+  assert.equal(c.op, 'show');
+  assert.equal(c.screen, 'income');
+  assert.equal(c.ym, '2026-10');
+  assert.equal(c.v, 1);
+});
