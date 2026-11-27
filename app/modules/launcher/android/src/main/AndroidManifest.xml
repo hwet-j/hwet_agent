@@ -1,0 +1,40 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- 타이머·알람을 UI 없이 바로 설정 -->
+  <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+  <!-- Android 11+ 패키지 가시성: 앱 목록(런처에 보이는 앱), 음악 검색 재생, 타이머·알람, 지도 앱 링크 -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+    <intent>
+      <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SET_TIMER" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.SET_ALARM" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="tmap" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="kakaomap" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="nmap" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="google.navigation" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="geo" />
+    </intent>
+  </queries>
+</manifest>
