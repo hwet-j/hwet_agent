@@ -10,6 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { applyBriefing } from '@/core/briefing';
 import { kvSet } from '@/core/db';
 import { getAutoRecord } from '@/integrations/flowledger/tools';
+import { getVoiceSettings, setVoiceSetting, type VoiceSettings } from '@/voice/settings';
 import { GOOGLE_CLIENT_ID, clearGoogle, getGoogleEmail, isGoogleConnected } from '@/integrations/google/auth';
 import { useGoogleLogin } from '@/integrations/google/useGoogleLogin';
 import {
@@ -35,10 +36,12 @@ export default function SettingsScreen() {
   const [gConnected, setGConnected] = useState(false);
   const [gEmail, setGEmail] = useState<string | null>(null);
   const [autoRecord, setAutoRecord] = useState(false);
+  const [voice, setVoice] = useState<VoiceSettings>({ tts: true, relisten: false, openListen: false });
   const googleLogin = useGoogleLogin();
 
   useEffect(() => {
     getAutoRecord().then(setAutoRecord);
+    getVoiceSettings().then(setVoice);
   }, []);
 
   useEffect(() => {
@@ -160,6 +163,31 @@ export default function SettingsScreen() {
                 }}
               />
             </View>
+          </Section>
+
+          <Section
+            title="음성 호출"
+            hint={`채팅의 마이크 버튼, 빠른 설정 타일, 기본 어시스턴트 호출로 말하면 비서가 듣고 답해요. 음성 인식은 기기의 구글 음성 서비스를 써서 API 비용이 들지 않아요.`}
+          >
+            {([
+              ['tts', '답변을 음성으로 읽어 주기'],
+              ['relisten', '답변 후 이어서 듣기 (대화 모드)'],
+              ['openListen', '앱을 열면 바로 듣기'],
+            ] as const).map(([key, label]) => (
+              <View key={key} style={styles.row}>
+                <ThemedText style={styles.flex}>{label}</ThemedText>
+                <Switch
+                  value={voice[key]}
+                  onValueChange={async (v) => {
+                    setVoice((cur) => ({ ...cur, [key]: v }));
+                    await setVoiceSetting(key, v);
+                  }}
+                />
+              </View>
+            ))}
+            <ThemedText type="small" themeColor="textSecondary">
+              {`• 홈/전원 버튼을 길게 눌러 부르기: 휴대폰 설정 → 앱 → 기본 앱 선택 → 디지털 어시스턴트 앱에서 "hwet-assistant"를 고르세요 (기종마다 메뉴 이름이 조금 달라요).\n• 알림창을 내려 편집(연필) → "비서에게 말하기" 타일을 끌어 넣으면 한 번에 들어요.\n• 빅스비·구글 어시스턴트로 "비서 열어줘"라고 하면 앱이 열리는데, 위의 "앱을 열면 바로 듣기"를 켜 두면 바로 듣기 시작해요.`}
+            </ThemedText>
           </Section>
 
           <Section title="아침 브리핑 (선택)" hint="켜면 매일 정한 시각에 알림이 오고, 알림을 누르면 비서가 오늘 할 일과 메모를 정리해 줘요.">

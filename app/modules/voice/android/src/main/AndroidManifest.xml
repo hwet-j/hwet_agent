@@ -1,0 +1,36 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.RECORD_AUDIO" />
+  <!-- Android 11+: 음성 인식 서비스(구글 앱 등)를 찾을 수 있게 -->
+  <queries>
+    <intent>
+      <action android:name="android.speech.RecognitionService" />
+    </intent>
+  </queries>
+  <application>
+    <!-- 기본 디지털 어시스턴트 앱으로 고를 수 있게 하는 서비스 (홈/전원 버튼 길게 누르기로 호출) -->
+    <service
+      android:name=".AssistVoiceService"
+      android:exported="true"
+      android:permission="android.permission.BIND_VOICE_INTERACTION">
+      <meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction_service" />
+      <intent-filter>
+        <action android:name="android.service.voice.VoiceInteractionService" />
+      </intent-filter>
+    </service>
+    <service
+      android:name=".AssistSessionService"
+      android:exported="true"
+      android:permission="android.permission.BIND_VOICE_INTERACTION" />
+    <!-- 빠른 설정(알림창) 타일: 누르면 바로 듣기 -->
+    <service
+      android:name=".AssistTileService"
+      android:exported="true"
+      android:icon="@drawable/ic_voice_tile"
+      android:label="@string/voice_tile_label"
+      android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+      <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE" />
+      </intent-filter>
+    </service>
+  </application>
+</manifest>

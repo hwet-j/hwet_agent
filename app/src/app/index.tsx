@@ -24,10 +24,12 @@ import { summarize } from '@/agent/activityPure';
 import type { AgentTool, OpenLink } from '@/agent/tool';
 import { builtinTools } from '@/builtin/tools';
 import { RichText } from '@/components/rich-text';
+import { VoiceOverlay } from '@/components/voice-overlay';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { logActivity } from '@/core/activity';
 import { pickPhoto, takePhoto, type Attachment } from '@/core/image';
+import { getVoiceSettings, type VoiceSettings } from '@/voice/settings';
 import { BRIEFING_PROMPT } from '@/core/briefing';
 import { getApiKey, getModel } from '@/core/settings';
 import { loadConnectorTools } from '@/connectors/registry';
@@ -132,7 +134,9 @@ export default function ChatScreen() {
   const [lastText, setLastText] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const attachRef = useRef<Attachment[]>([]);
-  const { q } = useLocalSearchParams<{ q?: string }>();
+  const { q, listen } = useLocalSearchParams<{ q?: string; listen?: string }>();
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>({ tts: true, relisten: false, openListen: false });
   const historyRef = useRef<History>([]);
   const busyRef = useRef(false);
   const handledNotification = useRef<string | null>(null);
@@ -158,6 +162,20 @@ export default function ChatScreen() {
     }
   }, [q]);
 
+  // 음성 호출: 링크(hwetassistant://?listen=1, 어시스턴트 호출·빠른 설정 타일)나 "앱을 열면 바로 듣기" 설정이면 음성 화면을 연다
+  useEffect(() => {
+    if (listen === '1') {
+      queueMicrotask(() => setVoiceOpen(true));
+      router.setParams({ listen: '' });
+    }
+  }, [listen]);
+  useEffect(() => {
+    getVoiceSettings().then((v) => {
+      setVoiceSettings(v);
+      if (v.openListen) setVoiceOpen(true);
+    });
+  }, []);
+
   const attach = () =>
     Alert.alert('사진 첨부', '영수증 같은 사진을 보내면 비서가 읽어서 처리해요.', [
       { text: '촬영', onPress: () => add(takePhoto) },
@@ -176,15 +194,16 @@ export default function ChatScreen() {
     }
   };
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string): Promise<string | null> => {
+    let answer: string | null = null;
     const imgs = attachRef.current;
     const userText = text.trim() || (imgs.length ? '이 영수증 읽어서 기록해줘' : '');
-    if (!userText || busy) return;
+    if (!userText || busy) return null;
     setError(null);
     const apiKey = await getApiKey();
     if (!apiKey) {
       setError('설정 탭에서 Claude API 키를 먼저 입력해 주세요.');
-      return;
+      return null;
     }
     setLastText(userText);
     const ctrl = new AbortController();
@@ -217,6 +236,11 @@ export default function ChatScreen() {
         },
       });
       await saveHistory(final);
+      // 음성 모드에서 읽어 줄 최종 답변: 마지막 비서 메시지의 텍스트
+      const lastA = [...final].reverse().find((m) => m.role === 'assistant');
+      if (lastA) {
+        answer = typeof lastA.content === 'string' ? lastA.content : (lastA.content as Anthropic.ContentBlockParam[]).filter((b): b is Anthropic.TextBlockParam => b.type === 'text').map((b) => b.text).join('\n');
+      }
     } catch (e) {
       // 실패해도 지금까지의 대화는 보존하되, 끝이 tool_use 로 끊긴 불완전 상태는 저장하지 않는다.
       const msg = e instanceof Error ? e.message : String(e);
@@ -241,6 +265,7 @@ export default function ChatScreen() {
       busyRef.current = false;
       setBusy(false);
     }
+    return answer;
   }, [busy]);
 
   // 아침 브리핑 알림을 눌러 앱을 연 경우 브리핑을 생성한다.
@@ -408,6 +433,9 @@ export default function ChatScreen() {
             </View>
           )}
           <View style={[styles.inputRow, { borderTopColor: theme.backgroundSelected }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="음성으로 말하기" disabled={busy} onPress={() => setVoiceOpen(true)} style={[styles.attach, { backgroundColor: theme.backgroundElement, opacity: busy ? 0.4 : 1 }]}>
+              <ThemedText style={styles.attachIcon}>🎙</ThemedText>
+            </Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="사진 첨부" disabled={busy} onPress={attach} style={[styles.attach, { backgroundColor: theme.backgroundElement, opacity: busy ? 0.4 : 1 }]}>
               <ThemedText style={styles.attachIcon}>📎</ThemedText>
             </Pressable>
@@ -437,6 +465,7 @@ export default function ChatScreen() {
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+      <VoiceOverlay visible={voiceOpen} onClose={() => setVoiceOpen(false)} onSubmit={(t) => send(t)} settings={voiceSettings} />
     </ThemedView>
   );
 }
