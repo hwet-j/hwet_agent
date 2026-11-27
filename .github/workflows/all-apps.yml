@@ -1,0 +1,82 @@
+name: All apps latest APK
+# 내 앱들의 최신 APK 를 한 릴리스(apps-latest)에 모아 둔다. 고정 주소로 한 번에 받을 수 있다.
+#   https://github.com/hwet-j/hwet_agent/releases/tag/apps-latest
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */3 * * *'
+  push:
+    branches: [main]
+    paths: ['.github/workflows/all-apps.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: all-apps
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    env:
+      # 비공개 저장소가 섞여 있으면 읽기 권한이 있는 토큰을 ALL_APPS_TOKEN 시크릿으로 넣는다 (없으면 기본 토큰, 공개 저장소만 가능)
+      READ_TOKEN: ${{ secrets.ALL_APPS_TOKEN || github.token }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Collect latest APKs
+        run: |
+          set -u
+          mkdir -p out tmp
+          : > notes.txt
+          # 파일이름|저장소|표시 이름
+          APPS="hwet-assistant|hwet_agent|비서
+          calendar|calendar|캘린더
+          leaselog|LeaseLog|LeaseLog(월세)
+          flowledger|FlowLedger|FlowLedger(가계부)
+          routinelog|RoutineLog|RoutineLog(복약·습관)
+          world-brief|world-brief|World Brief(세계 브리핑)"
+          echo "$APPS" | while IFS='|' read -r file repo label; do
+            [ -z "$file" ] && continue
+            export GH_TOKEN="$READ_TOKEN"
+            rels=$(gh api "repos/hwet-j/$repo/releases?per_page=40" 2>/dev/null || echo "[]")
+            # main 브랜치에서 만든 릴리스를 우선, 없으면 가장 최근 APK 릴리스
+            pick() { echo "$rels" | jq -r "[.[] | select(.assets | any(.name|test(\"\\\\.apk\$\"))) $1] | sort_by(.published_at) | last // empty | [.tag_name, .published_at, .target_commitish] | @tsv"; }
+            row=$(pick '| select(.target_commitish=="main")')
+            [ -z "$row" ] && row=$(pick '')
+            if [ -z "$row" ]; then
+              echo "- $label: 받을 APK 를 찾지 못했어요(저장소 접근 권한 또는 릴리스 없음)" >> notes.txt
+              echo "skip $repo"; continue
+            fi
+            tag=$(echo "$row" | cut -f1); pub=$(echo "$row" | cut -f2); br=$(echo "$row" | cut -f3)
+            rm -rf "tmp/$file"; mkdir -p "tmp/$file"
+            if gh release download "$tag" -R "hwet-j/$repo" -p '*.apk' -D "tmp/$file" 2>/dev/null; then
+              apk=$(ls "tmp/$file"/*.apk | head -1)
+              cp "$apk" "out/$file.apk"
+              note=""; [ "$br" != "main" ] && note=" (브랜치 $br 빌드)"
+              echo "- **$label**: \`$file.apk\` — 릴리스 $tag, $(echo "$pub" | cut -c1-16 | tr 'T' ' ') UTC$note" >> notes.txt
+              echo "ok $repo $tag"
+            else
+              echo "- $label: 내려받지 못했어요($tag)" >> notes.txt
+              echo "fail $repo $tag"
+            fi
+          done
+          ls -la out
+      - name: Publish release
+        run: |
+          set -eu
+          cnt=$(ls out/*.apk 2>/dev/null | wc -l)
+          if [ "$cnt" -eq 0 ]; then echo "APK 가 하나도 없어 중단"; exit 1; fi
+          (cd out && zip -q ../all-apps.zip *.apk)
+          mv all-apps.zip out/
+          {
+            echo "각 앱의 최신 빌드를 모았어요. 폰에서 파일을 눌러 설치하고, 이미 설치한 앱은 덮어 설치하면 데이터가 유지돼요."
+            echo
+            echo "자동 갱신: 3시간마다. 바로 갱신하려면 Actions > All apps latest APK > Run workflow."
+            echo
+            cat notes.txt
+            echo
+            echo "PC 에서 한 번에 받으려면 \`all-apps.zip\`."
+          } > notes.md
+          gh release delete apps-latest --cleanup-tag -y 2>/dev/null || true
+          gh release create apps-latest out/* --title "전체 앱 최신 APK" --notes-file notes.md --prerelease --target "${GITHUB_SHA}"
