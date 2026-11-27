@@ -1,0 +1,38 @@
+# hwet-assistant
+
+내 Android 폰에서 동작하는 개인 AI 비서 앱. Expo(React Native, SDK 58) + Claude API(도구 호출).
+
+## 기능
+- **AI 대화**: Claude Messages API, 도구 호출 루프 (`app/src/agent/agent.ts`)
+- **할 일 / 메모**: 로컬 SQLite (`app/src/builtin/tools.ts`)
+- **내 앱 연동**: 매니페스트(JSON)로 등록한 앱의 기능을 도구로 사용 → [`docs/connector-spec.md`](docs/connector-spec.md)
+- **캘린더 연동**: 내 `calendar` 앱에 딥링크로 일정 초안 열기, 구글 캘린더 조회·추가·수정·삭제 → [`docs/google-calendar-setup.md`](docs/google-calendar-setup.md)
+- **LeaseLog 연동**: "101호 45만원 입금", "박지후 세입자 등록"처럼 말하면 월세 앱 LeaseLog 의 **값이 채워진 확인 화면**을 열어 줍니다. 저장은 LeaseLog 에서 사용자가 직접 누릅니다. "저번 달 월 수입", "이번 달 미납", "공실"처럼 물으면 LeaseLog 가 요약을 **읽어서** 돌려주고(전화번호·주민번호·계좌·메모는 보내지 않음), 채팅 아래 버튼으로 해당 LeaseLog 화면을 열 수 있습니다 (쓰기는 1.6.0, 읽기는 1.7.0 이상 필요, 프로토콜은 LeaseLog 저장소 `CLAUDE.md`)
+- **캘린더 앱 읽기**: "이번 주 일정"을 캘린더 앱에서 읽어 오고(메모·참석자 제외) 해당 날짜 화면을 열 수 있습니다
+- **가계부 연동 (FlowLedger)**: "점심 9천원", "국민카드로 3만원 옷 샀어"처럼 말하면 FlowLedger 에 앱을 열지 않고 바로 기록합니다(통장 말이 없으면 앱의 자동 지정 규칙→기본 통장). 지출·수입·이체 기록/수정/삭제, 기간별 통계(분류 비율·전월 비교·예산), 거래 검색, 통장 잔액, 통장 자동 지정 규칙 추가. 기록 전 확인 창은 설정에서 끌 수 있어요
+- **영수증 읽기**: 채팅의 📎로 영수증 사진을 찍거나 올리면 Claude 가 가맹점·날짜·품목·할인·합계를 읽고(합계 검증), 확인 후 FlowLedger 에 한 건 + 품목 목록으로 기록합니다. "우유 얼마였지" 같은 품목 질문도 답해요. 사진은 대화 기록에 저장하지 않아요
+- **루틴 연동 (RoutineLog)**: "비타민D 먹었어", "오늘 러닝 5km 했어"처럼 말하면 앱을 열지 않고 체크·기록하고, "오늘 약 먹었나?", "운동 며칠 연속이야?"에 답해요. 새 루틴은 값이 채워진 추가 화면을 열어 줍니다
+- **활동 기록 탭**: 비서가 실행한 모든 도구 호출을 시각·내가 한 말·보낸 값·결과·상태(완료/실패/거부/앱에서 확인 필요)와 함께 저장해, 잘못 시킨 일을 되짚어 볼 수 있습니다 (변경/조회/실패 필터)
+- **그 밖의 도구**: 할 일·메모 수정, 알림 예약·조회·취소, 글 초안 클립보드 복사
+- **아침 브리핑 (선택)**: 설정에서 켜면 매일 지정 시각에 알림, 눌러서 열면 요약 생성 (기본 꺼짐)
+
+### 연동 앱 읽기의 동작과 보안
+비서 → 앱 요청(`rentmanager://assistant`, `calendarapp://assistant`)에 앱이 `hwetassistant://result?id=…&app=…&data=…` 로 답합니다. 답은 **명시적 인텐트로 비서 패키지(`com.hwetj.assistant`)에만** 가고, 비서는 자기가 보낸 요청 id(1회용, 20초 제한)와 앱이 일치할 때만 받아들입니다. 읽은 내용은 답변을 만들기 위해 Claude API 로 전송됩니다.
+
+## 폰에 설치하기
+1. GitHub → **Actions → Build Android APK** 가 끝나면 **Releases**(비서 APK #N)에서 APK 를 받아 설치합니다 (설정에서 "출처를 알 수 없는 앱 설치" 허용).
+2. 앱을 열고 **설정 탭에서 Claude API 키**를 입력합니다. (구글 캘린더 연결은 선택 → `docs/google-calendar-setup.md`)
+3. 함께 쓰는 앱: LeaseLog 1.6.0 이상(납부·세입자 등록), calendar(딥링크·삭제 동기화).
+
+## 개발
+```bash
+cd app
+npm install
+npx expo run:android        # 개발 빌드 (알림 등 네이티브 기능 때문에 Expo Go 대신 권장)
+npx tsc --noEmit && npx eslint src && npm test
+```
+처음 실행하면 **설정 탭에서 Claude API 키를 입력**하세요. 키는 기기 보안 저장소에만 저장됩니다.
+
+## 앱 이름·패키지
+임시 이름 `hwet-assistant` / `com.hwetj.assistant` 입니다. 이름은 `app/app.json` 의 `name`, 설치 후에는 바꾸기 어려운
+패키지명(`android.package`)은 첫 설치 전에 확정하세요.

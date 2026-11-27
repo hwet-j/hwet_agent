@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Android 11+ 패키지 가시성: 읽어 올 내 앱(LeaseLog, 캘린더)과 그 제공자만 보이게 한다 -->
+  <queries>
+    <package android:name="com.rentmanager.app" />
+    <package android:name="com.hwetj.calendar" />
+    <package android:name="com.hwetj.flowledger" />
+    <package android:name="com.hwetj.routinelog" />
+    <provider android:authorities="com.rentmanager.app.assistant" />
+    <provider android:authorities="com.hwetj.calendar.assistant" />
+    <provider android:authorities="com.hwetj.flowledger.assistant" />
+    <provider android:authorities="com.hwetj.routinelog.assistant" />
+  </queries>
+</manifest>
