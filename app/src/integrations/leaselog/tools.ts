@@ -2,6 +2,8 @@ import { Linking } from 'react-native';
 
 import type { AgentTool } from '@/agent/tool';
 import { bridge } from '../bridge';
+import { readSnapshot } from '../snapshot';
+import { pickLeaselog } from '../snapshotPure';
 import { buildLeaselogLink, buildLeaselogQueryLink, QUERY_WHATS, screenForQuery, SHOW_SCREENS, type LeaselogOp } from './pure';
 
 async function open(op: LeaselogOp, input: Record<string, unknown>, what: string) {
@@ -22,7 +24,21 @@ async function open(op: LeaselogOp, input: Record<string, unknown>, what: string
 
 /** LeaseLog 에 조회를 요청하고, LeaseLog 가 비서로 돌려보내는 결과를 기다린다 (잠깐 LeaseLog 로 갔다가 자동으로 돌아옴) */
 async function query(input: Record<string, unknown>) {
-  const { id, url } = buildLeaselogQueryLink(input); // 입력 검증 실패 시 예외
+  buildLeaselogQueryLink(input); // 입력 검증만 (실패 시 예외)
+  // 1순위: 앱을 열지 않고 백그라운드로 스냅샷을 읽는다 (LeaseLog 1.8.0 이상)
+  const snap = await readSnapshot('leaselog');
+  if (snap.ok) {
+    const p = pickLeaselog(snap.snapshot, { what: input.what, year: input.year, month: input.month });
+    if (p.ok) {
+      return {
+        source: 'LeaseLog(백그라운드)', what: input.what, asOf: p.asOf,
+        ...(p.stale ? { staleNote: 'LeaseLog 를 24시간 넘게 열지 않아 asOf 시점 기준이에요. 답할 때 그 시각 기준임을 알려 주세요.' } : {}),
+        ...(p.note ? { note: p.note } : {}), data: p.data,
+      };
+    }
+    // 스냅샷에 없는 범위(예: 오래된 연도)는 아래 방식(앱을 잠깐 열어 조회)으로 이어간다
+  }
+  const { id, url } = buildLeaselogQueryLink(input);
   const reply = bridge.wait(id, 'leaselog', 20_000);
   reply.catch(() => {}); // 열기 실패로 기다리지 않게 될 때의 unhandled rejection 방지
   try {
@@ -59,7 +75,7 @@ export const leaselogTools: AgentTool[] = [
     readOnly: true,
     describe: (i) => `LeaseLog 조회: ${QUERY_LABEL[String(i.what)] ?? String(i.what)}${i.month ? ` (${i.month})` : i.year ? ` (${i.year}년)` : ''}`,
     description:
-      '월세 앱 LeaseLog 의 데이터를 읽어 온다(데이터는 바뀌지 않음). 호출하면 LeaseLog 가 잠깐 열렸다가 결과를 가지고 비서로 자동으로 돌아온다. ' +
+      '월세 앱 LeaseLog 의 데이터를 읽어 온다(데이터는 바뀌지 않음). 앱을 열지 않고 백그라운드로 읽고(LeaseLog 1.8.0 이상), 구버전이거나 스냅샷에 없는 범위면 LeaseLog 가 잠깐 열렸다가 비서로 돌아온다. 결과에 asOf(스냅샷 시각)가 있다. ' +
       '"저번 달 월 수입", "이번 달 미납", "공실", "만기 임박" 같은 질문에는 숫자를 추측하지 말고 이 도구로 읽어서 답한다. ' +
       'overview=이번 달 수금·미납 요약·공실·60일 내 만기 · income=연도별 월 수입(year) · unpaid=미납/일부납 목록 · payments=그 달 입금 내역(month) · rooms=호실 현황 · tenants=세입자 목록(연락처 없음). ' +
       '"저번 달"은 현재 시각 기준 YYYY-MM 으로 계산해 month 에 넣는다. 결과는 요약해서 말하고, 사용자가 원하면 같은 내용을 LeaseLog 화면에서 볼 수 있다고 안내한다(채팅에 앱 열기 버튼이 자동으로 붙는다). ' +
