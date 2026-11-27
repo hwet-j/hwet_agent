@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import * as Notifications from 'expo-notifications';
-import { useFocusEffect } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -9,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Linking,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -20,6 +22,7 @@ import { loadHistory, saveHistory } from '@/agent/chatStore';
 import { summarize } from '@/agent/activityPure';
 import type { AgentTool, OpenLink } from '@/agent/tool';
 import { builtinTools } from '@/builtin/tools';
+import { RichText } from '@/components/rich-text';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { logActivity } from '@/core/activity';
@@ -38,6 +41,7 @@ type Item =
   | { key: string; kind: 'link'; link: OpenLink };
 
 const META = new Map<string, AgentTool>([...builtinTools, ...allIntegrationTools()].map((t) => [t.name, t]));
+const QUICK = ['오늘 일정', '이번 달 지출', '이번 달 미납', '남은 할 일', '통장 잔액'];
 const SUGGESTIONS = [
   '이번 주 일정 알려줘',
   '저번 달 월 수입 알려줘',
@@ -121,6 +125,10 @@ export default function ChatScreen() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasKey, setHasKey] = useState(true);
+  const abortRef = useRef<AbortController | null>(null);
+  const [lastText, setLastText] = useState('');
+  const { q } = useLocalSearchParams<{ q?: string }>();
   const historyRef = useRef<History>([]);
   const busyRef = useRef(false);
   const handledNotification = useRef<string | null>(null);
@@ -129,6 +137,7 @@ export default function ChatScreen() {
   // 탭으로 돌아올 때마다 저장된 대화를 다시 읽는다 (설정에서 기록을 지운 경우 반영). 진행 중에는 건드리지 않는다.
   useFocusEffect(
     useCallback(() => {
+      getApiKey().then((k) => setHasKey(!!k));
       if (busyRef.current) return;
       loadHistory().then((h) => {
         historyRef.current = h;
@@ -136,6 +145,14 @@ export default function ChatScreen() {
       });
     }, []),
   );
+
+  // 연동 앱 탭의 예시 문구를 누르면 입력창에 채워 준다
+  useEffect(() => {
+    if (typeof q === 'string' && q) {
+      queueMicrotask(() => setInput(q));
+      router.setParams({ q: '' });
+    }
+  }, [q]);
 
   const send = useCallback(async (text: string) => {
     const userText = text.trim();
@@ -146,6 +163,9 @@ export default function ChatScreen() {
       setError('설정 탭에서 Claude API 키를 먼저 입력해 주세요.');
       return;
     }
+    setLastText(userText);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     busyRef.current = true;
     setBusy(true);
     setInput('');
@@ -156,6 +176,7 @@ export default function ChatScreen() {
         model: await getModel(),
         history: trimHistory(historyRef.current),
         userText,
+        signal: ctrl.signal,
         tools,
         confirm: askConfirm,
         onActivity: (a) => {
@@ -173,7 +194,12 @@ export default function ChatScreen() {
     } catch (e) {
       // 실패해도 지금까지의 대화는 보존하되, 끝이 tool_use 로 끊긴 불완전 상태는 저장하지 않는다.
       const msg = e instanceof Error ? e.message : String(e);
-      if (/thinking/i.test(msg) && /signature|different conversation/i.test(msg)) {
+      if (ctrl.signal.aborted) {
+        // 사용자가 중단: 진행 중이던 대화는 저장된 상태로 되돌린다
+        historyRef.current = trimHistory(await loadHistory());
+        setHistory(historyRef.current);
+        setError('중단했어요.');
+      } else if (/thinking/i.test(msg) && /signature|different conversation/i.test(msg)) {
         // 예전 버전이 저장한 대화 기록과 맞지 않는 경우: 기록을 비우고 다시 시도하도록 안내
         await saveHistory([]);
         historyRef.current = [];
@@ -185,6 +211,7 @@ export default function ChatScreen() {
         setHistory(historyRef.current);
       }
     } finally {
+      abortRef.current = null;
       busyRef.current = false;
       setBusy(false);
     }
@@ -246,11 +273,21 @@ export default function ChatScreen() {
             keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
               <View style={styles.emptyBox}>
+                {!hasKey && (
+                  <Pressable accessibilityRole="button" onPress={() => router.push('/settings')} style={[styles.onboard, { backgroundColor: theme.accentSoft }]}>
+                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                      먼저 Claude API 키를 등록해 주세요 →
+                    </ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      설정 탭에서 키를 저장하면 바로 대화할 수 있어요.
+                    </ThemedText>
+                  </Pressable>
+                )}
                 <ThemedText type="subtitle" style={styles.emptyTitle}>
                   무엇을 도와드릴까요?
                 </ThemedText>
                 <ThemedText themeColor="textSecondary" style={styles.emptySub}>
-                  일정·할 일·메모, 월세(LeaseLog)와 캘린더 앱까지 말로 처리해요.
+                  일정·할 일·메모, 가계부(FlowLedger)·월세(LeaseLog)·캘린더 앱까지 말로 처리해요.
                 </ThemedText>
                 <View style={styles.chips}>
                   {SUGGESTIONS.map((q) => (
@@ -297,18 +334,40 @@ export default function ChatScreen() {
               }
               const mine = item.kind === 'user';
               return (
-                <View style={[styles.bubble, mine ? [styles.mine, { backgroundColor: theme.accent }] : [styles.theirs, { backgroundColor: theme.backgroundElement }]]}>
-                  <ThemedText selectable style={mine ? { color: '#fff' } : undefined}>
-                    {item.text}
-                  </ThemedText>
-                </View>
+                <Pressable
+                  onLongPress={async () => {
+                    await Clipboard.setStringAsync(item.text);
+                    Alert.alert('복사했어요');
+                  }}
+                  delayLongPress={350}
+                  style={[styles.bubble, mine ? [styles.mine, { backgroundColor: theme.accent }] : [styles.theirs, { backgroundColor: theme.backgroundElement }]]}>
+                  {mine ? <ThemedText selectable style={{ color: '#fff' }}>{item.text}</ThemedText> : <RichText text={item.text} color={theme.text} />}
+                </Pressable>
               );
             }}
           />
           {error && (
-            <ThemedText type="small" style={[styles.error, { color: theme.danger }]}>
-              {error}
-            </ThemedText>
+            <View style={[styles.errorBar, { backgroundColor: theme.danger + '1A' }]}>
+              <ThemedText type="small" style={[styles.flex, { color: theme.danger }]}>
+                {error}
+              </ThemedText>
+              {lastText && !busy ? (
+                <Pressable accessibilityRole="button" onPress={() => send(lastText)} hitSlop={8}>
+                  <ThemedText type="smallBold" style={{ color: theme.danger }}>
+                    다시 시도
+                  </ThemedText>
+                </Pressable>
+              ) : null}
+            </View>
+          )}
+          {!busy && !input && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.quick}>
+              {QUICK.map((qq) => (
+                <Pressable key={qq} accessibilityRole="button" onPress={() => send(qq)} style={[styles.quickChip, { backgroundColor: theme.backgroundElement }]}>
+                  <ThemedText type="small">{qq}</ThemedText>
+                </Pressable>
+              ))}
+            </ScrollView>
           )}
           <View style={[styles.inputRow, { borderTopColor: theme.backgroundSelected }]}>
             <TextInput
@@ -320,14 +379,20 @@ export default function ChatScreen() {
               multiline
               editable={!busy}
             />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="보내기"
-              disabled={busy || !input.trim()}
-              onPress={() => send(input)}
-              style={[styles.send, { backgroundColor: theme.accent, opacity: busy || !input.trim() ? 0.4 : 1 }]}>
-              {busy ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.sendIcon}>↑</ThemedText>}
-            </Pressable>
+            {busy ? (
+              <Pressable accessibilityRole="button" accessibilityLabel="중단" onPress={() => abortRef.current?.abort()} style={[styles.send, { backgroundColor: theme.danger }]}>
+                <View style={styles.stopIcon} />
+              </Pressable>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="보내기"
+                disabled={!input.trim()}
+                onPress={() => send(input)}
+                style={[styles.send, { backgroundColor: theme.accent, opacity: !input.trim() ? 0.4 : 1 }]}>
+                <ThemedText style={styles.sendIcon}>↑</ThemedText>
+              </Pressable>
+            )}
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -352,7 +417,11 @@ const styles = StyleSheet.create({
   thinking: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   toolChip: { alignSelf: 'flex-start', maxWidth: '92%', borderRadius: 12, paddingHorizontal: Spacing.two + 2, paddingVertical: Spacing.one + 1 },
   linkBtn: { alignSelf: 'flex-start', borderWidth: 1.5, borderRadius: 16, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
-  error: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
+  errorBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginHorizontal: Spacing.two, marginBottom: Spacing.one, padding: Spacing.two + 2, borderRadius: 12 },
+  onboard: { alignSelf: 'stretch', borderRadius: 16, padding: Spacing.three, gap: 2, marginBottom: Spacing.three },
+  quick: { gap: Spacing.two, paddingHorizontal: Spacing.two, paddingBottom: Spacing.two },
+  quickChip: { borderRadius: 16, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one + 3 },
+  stopIcon: { width: 14, height: 14, borderRadius: 3, backgroundColor: '#fff' },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.two, padding: Spacing.two, borderTopWidth: StyleSheet.hairlineWidth },
   input: { flex: 1, maxHeight: 120, borderRadius: 22, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two + 2, fontSize: 16 },
   send: { borderRadius: 22, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },

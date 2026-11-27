@@ -17,13 +17,13 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>비서</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon md="chat" />
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="connectors">
+        <NativeTabs.Trigger.Label>연동 앱</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon md="apps" />
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="history">
         <NativeTabs.Trigger.Label>기록</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon md="history" />
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="connectors">
-        <NativeTabs.Trigger.Label>연동 앱</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon md="extension" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <NativeTabs.Trigger.Label>설정</NativeTabs.Trigger.Label>
