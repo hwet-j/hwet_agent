@@ -27,4 +27,4 @@ export type AgentTool = {
 export type OpenLink =
   | { app: 'leaselog'; label: string; input: Record<string, unknown> }
   | { app: 'calendar'; label: string; date: string }
-  | { app: 'flowledger'; label: string; path: string };
+  | { app: 'flowledger' | 'routinelog'; label: string; path: string };

@@ -43,7 +43,7 @@ type Item =
   | { key: string; kind: 'link'; link: OpenLink };
 
 const META = new Map<string, AgentTool>([...builtinTools, ...allIntegrationTools()].map((t) => [t.name, t]));
-const QUICK = ['오늘 일정', '이번 달 지출', '이번 달 미납', '남은 할 일', '통장 잔액'];
+const QUICK = ['오늘 일정', '이번 달 지출', '오늘 약 먹었나?', '이번 달 미납', '남은 할 일', '통장 잔액'];
 const SUGGESTIONS = [
   '이번 주 일정 알려줘',
   '저번 달 월 수입 알려줘',
@@ -90,11 +90,11 @@ function toItems(history: History): Item[] {
 
 async function openAppLink(link: OpenLink) {
   const url =
-    link.app === 'leaselog' ? buildLeaselogLink('show', link.input) : link.app === 'calendar' ? buildCalendarShowLink(link.date) : `flowledger://${link.path}`;
+    link.app === 'leaselog' ? buildLeaselogLink('show', link.input) : link.app === 'calendar' ? buildCalendarShowLink(link.date) : `${link.app}://${link.path}`;
   try {
     await Linking.openURL(url);
   } catch {
-    Alert.alert('앱을 열 수 없어요', `${link.app === 'leaselog' ? 'LeaseLog' : link.app === 'calendar' ? '캘린더' : 'FlowLedger'} 앱이 설치되어 있는지 확인해 주세요.`);
+    Alert.alert('앱을 열 수 없어요', `${link.app === 'leaselog' ? 'LeaseLog' : link.app === 'calendar' ? '캘린더' : link.app === 'routinelog' ? 'RoutineLog' : 'FlowLedger'} 앱이 설치되어 있는지 확인해 주세요.`);
   }
 }
 

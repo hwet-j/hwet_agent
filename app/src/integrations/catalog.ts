@@ -1,6 +1,6 @@
 /** 비서가 연동하는 내 앱 목록 (연동 앱 탭에 보여줄 설명) */
 export type CatalogApp = {
-  id: 'leaselog' | 'calendar' | 'flowledger' | 'google';
+  id: 'leaselog' | 'calendar' | 'flowledger' | 'routinelog' | 'google';
   name: string;
   tagline: string;
   emoji: string;
@@ -18,6 +18,12 @@ export const CATALOG: CatalogApp[] = [
     read: ['통장 잔액·분류·예산', '기간별 지출 통계(분류 비율, 전월 비교)', '거래 내역 검색'],
     write: ['수입·지출·이체 기록 (앱을 열지 않고 바로)', '거래 수정·삭제', '통장 자동 지정 규칙'],
     examples: ['점심 9천원 먹었어', '이번 달 어디에 돈 많이 썼어?', '국민카드로 3만원 옷 샀어'],
+  },
+  {
+    id: 'routinelog', name: 'RoutineLog', tagline: '복약·영양제 알림 · 습관 기록', emoji: '💊', openUrl: 'routinelog://today', needs: '최신 버전, 한 번 실행',
+    read: ['오늘 먹을 약·영양제와 해야 할 습관(완료/놓침)', '연속 일수·달성률·복약 순응도·기록한 값 합계'],
+    write: ['"먹었어요", "운동했어" 체크·기록 (앱을 열지 않고 바로)', '새 루틴 화면 열기 (저장·알림 예약은 앱에서)'],
+    examples: ['오늘 약 먹었나?', '비타민D 먹었어', '오늘 러닝 5km 뛰었어'],
   },
   {
     id: 'leaselog', name: 'LeaseLog', tagline: '월세 · 세입자 관리', emoji: '🏠', openUrl: 'rentmanager://assistant', needs: '1.8.0 이상, 한 번 실행',

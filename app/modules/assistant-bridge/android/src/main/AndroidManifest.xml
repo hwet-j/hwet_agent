@@ -4,8 +4,10 @@
     <package android:name="com.rentmanager.app" />
     <package android:name="com.hwetj.calendar" />
     <package android:name="com.hwetj.flowledger" />
+    <package android:name="com.hwetj.routinelog" />
     <provider android:authorities="com.rentmanager.app.assistant" />
     <provider android:authorities="com.hwetj.calendar.assistant" />
     <provider android:authorities="com.hwetj.flowledger.assistant" />
+    <provider android:authorities="com.hwetj.routinelog.assistant" />
   </queries>
 </manifest>

@@ -10,7 +10,7 @@ import expo.modules.kotlin.modules.ModuleDefinition
  * 허용 목록에 있는 제공자만 호출한다. 상대 앱은 호출자 패키지(com.hwetj.assistant)를 확인해 응답한다.
  */
 class AssistantBridgeModule : Module() {
-  private val allowed = setOf("com.rentmanager.app.assistant", "com.hwetj.calendar.assistant", "com.hwetj.flowledger.assistant")
+  private val allowed = setOf("com.rentmanager.app.assistant", "com.hwetj.calendar.assistant", "com.hwetj.flowledger.assistant", "com.hwetj.routinelog.assistant")
 
   override fun definition() = ModuleDefinition {
     Name("AssistantBridge")
