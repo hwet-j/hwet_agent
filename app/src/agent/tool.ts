@@ -6,6 +6,8 @@ export type AgentTool = {
   inputSchema: { type: 'object'; [k: string]: unknown };
   /** true 면 실행 전에 사용자에게 확인을 받는다. */
   needsConfirm: boolean;
+  /** true 를 돌려주면 needsConfirm 이어도 확인 없이 실행한다 (사용자가 설정에서 "확인 없이 바로"를 켠 경우) */
+  skipConfirm?: () => Promise<boolean>;
   /** 확인 창에 보여줄 사람이 읽는 설명 */
   label: string;
   /** 확인 창에 보여줄 사람이 읽는 상세 설명 (예: 삭제할 일정의 제목·시간). 실패하면 입력 JSON 을 대신 보여준다. */
@@ -24,4 +26,5 @@ export type AgentTool = {
 /** 채팅에서 누르면 연동 앱의 해당 화면을 여는 버튼 */
 export type OpenLink =
   | { app: 'leaselog'; label: string; input: Record<string, unknown> }
-  | { app: 'calendar'; label: string; date: string };
+  | { app: 'calendar'; label: string; date: string }
+  | { app: 'flowledger'; label: string; path: string };

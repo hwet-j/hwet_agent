@@ -3,7 +3,9 @@
   <queries>
     <package android:name="com.rentmanager.app" />
     <package android:name="com.hwetj.calendar" />
+    <package android:name="com.hwetj.flowledger" />
     <provider android:authorities="com.rentmanager.app.assistant" />
     <provider android:authorities="com.hwetj.calendar.assistant" />
+    <provider android:authorities="com.hwetj.flowledger.assistant" />
   </queries>
 </manifest>

@@ -44,6 +44,8 @@ const SUGGESTIONS = [
   '이번 달 미납 있어?',
   '내일 오후 3시 치과 약속 잡아줘',
   '남은 할 일 정리해줘',
+  '점심 9천원 먹었어',
+  '이번 달 어디에 돈 많이 썼어?',
 ];
 
 /** 저장된 API 히스토리를 화면용 목록으로 바꾼다. tool_result 는 숨기되 실패 여부만 도구 칩에 반영한다. */
@@ -81,11 +83,12 @@ function toItems(history: History): Item[] {
 }
 
 async function openAppLink(link: OpenLink) {
-  const url = link.app === 'leaselog' ? buildLeaselogLink('show', link.input) : buildCalendarShowLink(link.date);
+  const url =
+    link.app === 'leaselog' ? buildLeaselogLink('show', link.input) : link.app === 'calendar' ? buildCalendarShowLink(link.date) : `flowledger://${link.path}`;
   try {
     await Linking.openURL(url);
   } catch {
-    Alert.alert('앱을 열 수 없어요', `${link.app === 'leaselog' ? 'LeaseLog' : '캘린더'} 앱이 설치되어 있는지 확인해 주세요.`);
+    Alert.alert('앱을 열 수 없어요', `${link.app === 'leaselog' ? 'LeaseLog' : link.app === 'calendar' ? '캘린더' : 'FlowLedger'} 앱이 설치되어 있는지 확인해 주세요.`);
   }
 }
 

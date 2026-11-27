@@ -8,6 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { applyBriefing } from '@/core/briefing';
+import { kvSet } from '@/core/db';
+import { getAutoRecord } from '@/integrations/flowledger/tools';
 import { GOOGLE_CLIENT_ID, clearGoogle, getGoogleEmail, isGoogleConnected } from '@/integrations/google/auth';
 import { useGoogleLogin } from '@/integrations/google/useGoogleLogin';
 import {
@@ -32,7 +34,12 @@ export default function SettingsScreen() {
   const [minute, setMinute] = useState('0');
   const [gConnected, setGConnected] = useState(false);
   const [gEmail, setGEmail] = useState<string | null>(null);
+  const [autoRecord, setAutoRecord] = useState(false);
   const googleLogin = useGoogleLogin();
+
+  useEffect(() => {
+    getAutoRecord().then(setAutoRecord);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -137,6 +144,22 @@ export default function SettingsScreen() {
             ) : (
               <Button title="구글 계정 연결" disabled={!GOOGLE_CLIENT_ID} onPress={connectGoogle} />
             )}
+          </Section>
+
+          <Section
+            title="가계부 (FlowLedger)"
+            hint="가계부 기록·수정은 기본적으로 저장 전에 한 번 확인을 받아요. 켜면 확인 없이 바로 저장하고, 잘못 기록해도 '방금 거 취소해줘'로 되돌릴 수 있어요. 삭제는 항상 확인해요."
+          >
+            <View style={styles.row}>
+              <ThemedText style={styles.flex}>확인 없이 바로 저장</ThemedText>
+              <Switch
+                value={autoRecord}
+                onValueChange={async (v) => {
+                  setAutoRecord(v);
+                  await kvSet('flowledger_auto', v ? '1' : '0');
+                }}
+              />
+            </View>
           </Section>
 
           <Section title="아침 브리핑 (선택)" hint="켜면 매일 정한 시각에 알림이 오고, 알림을 누르면 비서가 오늘 할 일과 메모를 정리해 줘요.">
