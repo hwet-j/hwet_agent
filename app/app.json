@@ -31,6 +31,13 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "영수증·문서를 촬영해 비서에게 보내려고 카메라를 사용해요.",
+          "photosPermission": "영수증 사진을 비서에게 보내려고 사진을 선택해요."
+        }
+      ],
       "expo-sqlite",
       [
         "expo-notifications",

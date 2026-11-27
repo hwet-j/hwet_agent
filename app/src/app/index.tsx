@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Linking,
   Pressable,
@@ -26,6 +27,7 @@ import { RichText } from '@/components/rich-text';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { logActivity } from '@/core/activity';
+import { pickPhoto, takePhoto, type Attachment } from '@/core/image';
 import { BRIEFING_PROMPT } from '@/core/briefing';
 import { getApiKey, getModel } from '@/core/settings';
 import { loadConnectorTools } from '@/connectors/registry';
@@ -128,6 +130,8 @@ export default function ChatScreen() {
   const [hasKey, setHasKey] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const [lastText, setLastText] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const attachRef = useRef<Attachment[]>([]);
   const { q } = useLocalSearchParams<{ q?: string }>();
   const historyRef = useRef<History>([]);
   const busyRef = useRef(false);
@@ -154,8 +158,27 @@ export default function ChatScreen() {
     }
   }, [q]);
 
+  const attach = () =>
+    Alert.alert('사진 첨부', '영수증 같은 사진을 보내면 비서가 읽어서 처리해요.', [
+      { text: '촬영', onPress: () => add(takePhoto) },
+      { text: '앨범에서 선택', onPress: () => add(pickPhoto) },
+      { text: '취소', style: 'cancel' },
+    ]);
+  const add = async (fn: () => Promise<Attachment | null>) => {
+    try {
+      const a = await fn();
+      if (a) {
+        attachRef.current = [...attachRef.current, a].slice(0, 3);
+        setAttachments(attachRef.current);
+      }
+    } catch (e) {
+      Alert.alert('사진을 가져오지 못했어요', e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const send = useCallback(async (text: string) => {
-    const userText = text.trim();
+    const imgs = attachRef.current;
+    const userText = text.trim() || (imgs.length ? '이 영수증 읽어서 기록해줘' : '');
     if (!userText || busy) return;
     setError(null);
     const apiKey = await getApiKey();
@@ -169,6 +192,8 @@ export default function ChatScreen() {
     busyRef.current = true;
     setBusy(true);
     setInput('');
+    attachRef.current = [];
+    setAttachments([]);
     try {
       const tools = [...builtinTools, ...(await integrationTools()), ...(await loadConnectorTools())];
       const final = await runTurn({
@@ -176,6 +201,7 @@ export default function ChatScreen() {
         model: await getModel(),
         history: trimHistory(historyRef.current),
         userText,
+        images: imgs,
         signal: ctrl.signal,
         tools,
         confirm: askConfirm,
@@ -369,7 +395,22 @@ export default function ChatScreen() {
               ))}
             </ScrollView>
           )}
+          {attachments.length > 0 && (
+            <View style={styles.thumbs}>
+              {attachments.map((a, i) => (
+                <Pressable key={a.uri} accessibilityLabel="첨부 사진 제거" onPress={() => { attachRef.current = attachRef.current.filter((_, j) => j !== i); setAttachments(attachRef.current); }}>
+                  <Image source={{ uri: a.uri }} style={styles.thumb} />
+                  <View style={[styles.thumbX, { backgroundColor: theme.text }]}>
+                    <ThemedText style={{ color: theme.background, fontSize: 11, lineHeight: 14 }}>✕</ThemedText>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          )}
           <View style={[styles.inputRow, { borderTopColor: theme.backgroundSelected }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="사진 첨부" disabled={busy} onPress={attach} style={[styles.attach, { backgroundColor: theme.backgroundElement, opacity: busy ? 0.4 : 1 }]}>
+              <ThemedText style={styles.attachIcon}>📎</ThemedText>
+            </Pressable>
             <TextInput
               style={[styles.input, { color: theme.text, backgroundColor: theme.backgroundElement }]}
               placeholder="비서에게 말하기"
@@ -387,9 +428,9 @@ export default function ChatScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="보내기"
-                disabled={!input.trim()}
+                disabled={!input.trim() && attachments.length === 0}
                 onPress={() => send(input)}
-                style={[styles.send, { backgroundColor: theme.accent, opacity: !input.trim() ? 0.4 : 1 }]}>
+                style={[styles.send, { backgroundColor: theme.accent, opacity: !input.trim() && attachments.length === 0 ? 0.4 : 1 }]}>
                 <ThemedText style={styles.sendIcon}>↑</ThemedText>
               </Pressable>
             )}
@@ -421,6 +462,11 @@ const styles = StyleSheet.create({
   onboard: { alignSelf: 'stretch', borderRadius: 16, padding: Spacing.three, gap: 2, marginBottom: Spacing.three },
   quick: { gap: Spacing.two, paddingHorizontal: Spacing.two, paddingBottom: Spacing.two },
   quickChip: { borderRadius: 16, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one + 3 },
+  thumbs: { flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
+  thumb: { width: 56, height: 56, borderRadius: 10 },
+  thumbX: { position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  attach: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  attachIcon: { fontSize: 20, lineHeight: 24 },
   stopIcon: { width: 14, height: 14, borderRadius: 3, backgroundColor: '#fff' },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.two, padding: Spacing.two, borderTopWidth: StyleSheet.hairlineWidth },
   input: { flex: 1, maxHeight: 120, borderRadius: 22, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two + 2, fontSize: 16 },

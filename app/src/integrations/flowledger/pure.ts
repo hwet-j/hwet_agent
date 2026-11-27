@@ -5,10 +5,11 @@
 export const AUTHORITY = 'com.hwetj.flowledger.assistant';
 
 export type TxType = 'expense' | 'income' | 'transfer';
+export type Item = { name: string; qty?: number; unit_price?: number | null; amount: number; category?: string | null };
 export type Tx = {
   id: string; type: TxType; amount: number; date: string; time?: string | null;
   account: string; to_account?: string | null; category?: string | null;
-  merchant?: string | null; memo?: string | null; tags?: string | null; source?: string;
+  merchant?: string | null; memo?: string | null; tags?: string | null; source?: string; items?: Item[];
 };
 export type Account = { id: string; name: string; kind: string; balance: number; is_default: number | boolean; archived?: number | boolean };
 export type Rule = { id: string; keyword: string; match: 'merchant' | 'category' | 'memo' | 'any'; account: string };
@@ -44,6 +45,39 @@ function date(v: unknown, field: string): string | undefined {
 }
 const compact = <T extends Record<string, unknown>>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 
+export const MAX_ITEMS = 100;
+
+/** 영수증 품목 검증. 합계가 총액과 같아야 한다 (할인·쿠폰 줄은 음수 금액) */
+export function buildItems(v: unknown, total?: number): Item[] | undefined {
+  if (v == null) return undefined;
+  if (!Array.isArray(v)) throw new Error('items 는 배열이어야 해요');
+  if (v.length > MAX_ITEMS) throw new Error(`품목은 최대 ${MAX_ITEMS}개까지예요`);
+  const out = v.map((raw, i): Item => {
+    const it = raw as Record<string, unknown>;
+    const name = optStr(it?.name, `items[${i}].name`, 80);
+    if (!name) throw new Error(`품목 ${i + 1} 의 name 이 비어 있어요`);
+    const amt = it.amount;
+    if (typeof amt !== 'number' || !Number.isInteger(amt) || amt === 0 || Math.abs(amt) > MAX_AMOUNT) throw new Error(`품목 "${name}" 의 amount 는 0 이 아닌 정수(원)여야 해요 (할인은 음수)`);
+    const item: Item = { name, amount: amt };
+    if (it.qty != null) {
+      if (typeof it.qty !== 'number' || !(it.qty > 0) || it.qty > 9999) throw new Error(`품목 "${name}" 의 qty 가 올바르지 않아요`);
+      item.qty = it.qty;
+    }
+    if (it.unit_price != null) {
+      if (typeof it.unit_price !== 'number' || !Number.isInteger(it.unit_price) || it.unit_price < 0) throw new Error(`품목 "${name}" 의 unit_price 가 올바르지 않아요`);
+      item.unit_price = it.unit_price;
+    }
+    const cat = optStr(it.category, `items[${i}].category`, 60);
+    if (cat) item.category = cat;
+    return item;
+  });
+  if (total != null) {
+    const sum = out.reduce((s, x) => s + x.amount, 0);
+    if (sum !== total) throw new Error(`품목 합계 ${won(sum)} 가 총액 ${won(total)} 과 달라요. 할인·세금·봉투값 줄이 빠졌는지 확인해 주세요`);
+  }
+  return out;
+}
+
 /** 거래 추가 요청 검증 → provider `add` 인자 */
 export function buildAddArgs(i: Record<string, unknown>, reqId: string) {
   if (i.type !== 'expense' && i.type !== 'income' && i.type !== 'transfer') throw new Error('type 은 expense, income, transfer 중 하나여야 해요');
@@ -55,6 +89,9 @@ export function buildAddArgs(i: Record<string, unknown>, reqId: string) {
     category: optStr(i.category, 'category', 60), merchant: optStr(i.merchant, 'merchant', 80),
     memo: optStr(i.memo, 'memo', 300), tags: optStr(i.tags, 'tags', 100),
   });
+  const its = buildItems(i.items, out.amount);
+  if (its && i.type === 'transfer') throw new Error('이체에는 items 를 쓸 수 없어요');
+  if (its?.length) (out as Record<string, unknown>).items = its;
   if (i.type === 'transfer' && !out.to_account) throw new Error('이체는 to_account(입금 통장)가 필요해요');
   if (i.type === 'transfer' && out.category) throw new Error('이체에는 category 를 쓸 수 없어요');
   if (i.type !== 'transfer' && out.to_account) throw new Error('to_account 는 이체에만 쓸 수 있어요');
@@ -81,6 +118,7 @@ export function buildUpdateArgs(i: Record<string, unknown>) {
       out.time = t;
     }
   }
+  if (i.items !== undefined) out.items = buildItems(i.items, typeof out.amount === 'number' ? out.amount : undefined) ?? [];
   if (Object.keys(out).length < 2) throw new Error('바꿀 항목이 없어요');
   return out;
 }
@@ -124,6 +162,12 @@ export function previewText(args: ReturnType<typeof buildAddArgs>, acc: ReturnTy
   if (args.merchant) lines.push(`가맹점: ${args.merchant}`);
   if (args.memo) lines.push(`메모: ${args.memo}`);
   lines.push(`날짜: ${args.date ?? `${today} (오늘)`}${args.time ? ` ${args.time}` : ''}`);
+  const items = (args as { items?: Item[] }).items;
+  if (items?.length) {
+    lines.push(`품목 ${items.length}개:`);
+    for (const it of items.slice(0, 12)) lines.push(`  · ${it.name}${it.qty && it.qty !== 1 ? ` ×${it.qty}` : ''}  ${won(it.amount)}${it.category ? ` (${it.category})` : ''}`);
+    if (items.length > 12) lines.push(`  … 외 ${items.length - 12}개`);
+  }
   return lines.join('\n');
 }
 
@@ -131,6 +175,12 @@ export function previewText(args: ReturnType<typeof buildAddArgs>, acc: ReturnTy
 const top = (c?: string | null) => (c ? c.split('>')[0] : '미분류');
 
 export type Summary = ReturnType<typeof summarize>;
+
+/** 지출 거래를 분류별 조각으로: 품목이 있으면 품목 분류(없으면 거래 분류)별 금액, 없으면 거래 전체 */
+export function expenseParts(t: Tx): { category: string | null | undefined; amount: number }[] {
+  if (!t.items?.length) return [{ category: t.category, amount: t.amount }];
+  return t.items.map((it) => ({ category: it.category ?? t.category, amount: it.amount }));
+}
 
 /** [from, to] (포함) 거래의 수입/지출/분류/통장/가맹점 통계. 이체는 수입·지출에 넣지 않고 별도 합계 */
 export function summarize(txs: Tx[], from: string, to: string, prev?: { from: string; to: string }) {
@@ -143,12 +193,16 @@ export function summarize(txs: Tx[], from: string, to: string, prev?: { from: st
   const cat = new Map<string, { amount: number; count: number; sub: Map<string, number> }>();
   for (const t of cur) {
     if (t.type !== 'expense') continue;
-    const g = top(t.category);
-    const e = cat.get(g) ?? { amount: 0, count: 0, sub: new Map() };
-    e.amount += t.amount; e.count++;
-    const subName = t.category?.includes('>') ? t.category.split('>')[1] : g;
-    e.sub.set(subName, (e.sub.get(subName) ?? 0) + t.amount);
-    cat.set(g, e);
+    const seen = new Set<string>();
+    for (const part of expenseParts(t)) {
+      const g = top(part.category);
+      const e = cat.get(g) ?? { amount: 0, count: 0, sub: new Map() };
+      e.amount += part.amount;
+      if (!seen.has(g)) { e.count++; seen.add(g); }
+      const subName = part.category?.includes('>') ? part.category.split('>')[1] : g;
+      e.sub.set(subName, (e.sub.get(subName) ?? 0) + part.amount);
+      cat.set(g, e);
+    }
   }
   const byCategory = [...cat.entries()].sort((a, b) => b[1].amount - a[1].amount).map(([name, e]) => ({
     category: name, amount: e.amount, count: e.count, ratio: expense ? Math.round((e.amount / expense) * 1000) / 10 : 0,
@@ -184,7 +238,7 @@ export function summarize(txs: Tx[], from: string, to: string, prev?: { from: st
     const p = txs.filter((t) => inRange(t, prev.from, prev.to));
     const pe = sum(p, 'expense'), pi = sum(p, 'income');
     const pc = new Map<string, number>();
-    for (const t of p) if (t.type === 'expense') pc.set(top(t.category), (pc.get(top(t.category)) ?? 0) + t.amount);
+    for (const t of p) if (t.type === 'expense') for (const part of expenseParts(t)) pc.set(top(part.category), (pc.get(top(part.category)) ?? 0) + part.amount);
     out.previous = {
       ...prev, income: pi, expense: pe, expenseChangePct: pe ? Math.round(((expense - pe) / pe) * 1000) / 10 : null,
       categoryChanges: byCategory.map((c) => ({ category: c.category, amount: c.amount, prevAmount: pc.get(c.category) ?? 0, diff: c.amount - (pc.get(c.category) ?? 0) }))

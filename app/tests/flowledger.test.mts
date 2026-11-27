@@ -126,3 +126,58 @@ test('거래 필터', () => {
   assert.equal(filterTxs(txs, { min: 50000, max: 100000 }).length, 1);
   assert.equal(filterTxs(txs, { text: ' 김밥 천국' }).length, 2);
 });
+
+import { buildItems, expenseParts } from '../src/integrations/flowledger/pure.ts';
+
+test('영수증 품목: 검증과 합계 일치', () => {
+  const items = [
+    { name: '우유 1L', qty: 2, unit_price: 2980, amount: 5960, category: '식비>장보기' },
+    { name: '세제', amount: 8900, category: '쇼핑>생활용품' },
+    { name: '쿠폰할인', amount: -1000 },
+  ];
+  assert.equal(buildItems(items, 13860)?.length, 3);
+  assert.throws(() => buildItems(items, 14000), /품목 합계 13,860원 가 총액 14,000원/);
+  assert.throws(() => buildItems([{ name: '', amount: 100 }]));
+  assert.throws(() => buildItems([{ name: 'x', amount: 0 }]));
+  assert.throws(() => buildItems([{ name: 'x', amount: 1.5 }]));
+  assert.throws(() => buildItems([{ name: 'x', amount: 10, qty: 0 }]));
+  assert.throws(() => buildItems([{ name: 'x', amount: 10, unit_price: -1 }]));
+  assert.throws(() => buildItems('x'));
+  assert.throws(() => buildItems(Array.from({ length: 101 }, () => ({ name: 'a', amount: 1 }))));
+  assert.equal(buildItems(undefined), undefined);
+});
+
+test('추가 요청에 품목: 합계 불일치·이체 불가', () => {
+  const ok = buildAddArgs({ type: 'expense', amount: 3000, merchant: '마트', items: [{ name: '두부', amount: 2000 }, { name: '콩나물', amount: 1000 }] }, 'r') as any;
+  assert.equal(ok.items.length, 2);
+  assert.throws(() => buildAddArgs({ type: 'expense', amount: 3000, items: [{ name: '두부', amount: 2000 }] }, 'r'), /달라요/);
+  assert.throws(() => buildAddArgs({ type: 'transfer', amount: 10, to_account: 'b', items: [{ name: 'a', amount: 10 }] }, 'r'));
+  assert.equal((buildAddArgs({ type: 'expense', amount: 5 }, 'r') as any).items, undefined);
+});
+
+test('수정 요청의 품목: 빈 배열은 삭제, 금액과 함께면 합계 검증', () => {
+  assert.deepEqual((buildUpdateArgs({ id: 'x', items: [] }) as any).items, []);
+  assert.throws(() => buildUpdateArgs({ id: 'x', amount: 100, items: [{ name: 'a', amount: 50 }] }));
+  assert.equal((buildUpdateArgs({ id: 'x', items: [{ name: 'a', amount: 50 }] }) as any).items.length, 1);
+});
+
+test('미리보기에 품목 표시(최대 12줄)', () => {
+  const items = Array.from({ length: 14 }, (_, i) => ({ name: `품목${i}`, amount: 100 }));
+  const args = buildAddArgs({ type: 'expense', amount: 1400, items }, 'r');
+  const t = previewText(args, { name: '국민은행', source: 'default' }, '2026-11-27');
+  assert.match(t, /품목 14개/);
+  assert.match(t, /외 2개/);
+});
+
+test('통계: 품목 분류가 영수증을 쪼갠다', () => {
+  const receipt: Tx = tx({ amount: 15000, category: '식비>장보기', merchant: '마트', date: '2026-11-03', items: [
+    { name: '우유', amount: 5000 }, { name: '세제', amount: 9000, category: '쇼핑>생활용품' }, { name: '쿠폰', amount: 1000 },
+  ] });
+  assert.deepEqual(expenseParts(receipt), [
+    { category: '식비>장보기', amount: 5000 }, { category: '쇼핑>생활용품', amount: 9000 }, { category: '식비>장보기', amount: 1000 },
+  ]);
+  const s = summarize([receipt], '2026-11-01', '2026-11-30');
+  assert.equal(s.expense, 15000);
+  assert.deepEqual(s.byCategory.map((c) => [c.category, c.amount, c.count]), [['쇼핑', 9000, 1], ['식비', 6000, 1]]);
+  assert.deepEqual(s.topMerchants[0], { merchant: '마트', amount: 15000, count: 1 });
+});

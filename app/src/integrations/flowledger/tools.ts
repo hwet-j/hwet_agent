@@ -30,7 +30,7 @@ async function call<T = any>(method: string, arg: unknown): Promise<T> {
   }
 }
 
-const query = (from: string, to: string, limit = 3000) => call<LedgerQuery>('query', { from, to, limit });
+const query = (from: string, to: string, limit = 3000, includeItems = false) => call<LedgerQuery>('query', { from, to, limit, ...(includeItems ? { include_items: true } : {}) });
 
 function period(i: Record<string, unknown>, defFromDays = 30): { from: string; to: string } {
   const today = new Date();
@@ -55,6 +55,22 @@ const txProps = {
   merchant: { type: 'string', description: '가맹점/상호(예: 스타벅스)' },
   memo: { type: 'string' },
   tags: { type: 'string', description: '쉼표로 구분한 태그(선택)' },
+};
+const itemsProp = {
+  type: 'array',
+  description:
+    '영수증 품목 목록(선택). 영수증 1장 = 거래 1건이고 품목별로 나눠 적는다. 품목 amount 합계가 거래 amount 와 반드시 같아야 한다(할인·쿠폰은 음수 줄, 세금·봉투값도 줄로). 각 품목에 category 를 넣으면 한 영수증이 분류별로 쪼개져 통계에 반영된다.',
+  items: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: '품목명' },
+      qty: { type: 'number', description: '수량(생략 시 1)' },
+      unit_price: { type: 'integer', description: '단가(원, 선택)' },
+      amount: { type: 'integer', description: '품목 금액(원, 수량 반영 후, 할인은 음수)' },
+      category: { type: 'string', description: '품목 분류(선택, 생략하면 거래 분류)' },
+    },
+    required: ['name', 'amount'],
+  },
 };
 
 export const flowledgerTools: AgentTool[] = [
@@ -97,7 +113,7 @@ export const flowledgerTools: AgentTool[] = [
       const prev = previousPeriod(from, to);
       const spanDays = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${prev.from}T00:00:00Z`)) / 86_400_000) + 1;
       const withPrev = spanDays <= 400;
-      const q = await query(withPrev ? prev.from : from, to);
+      const q = await query(withPrev ? prev.from : from, to, 3000, true);
       const s = summarize(q.transactions, from, to, withPrev ? prev : undefined);
       // 한 달 범위면 예산 대비 진행률
       const oneMonth = monthOf(from) === monthOf(to);
@@ -150,6 +166,23 @@ export const flowledgerTools: AgentTool[] = [
     },
   },
   {
+    name: 'flowledger_items',
+    label: 'FlowLedger 구매 품목 조회',
+    readOnly: true,
+    description:
+      '영수증 품목 단위의 구매 내역을 찾는다(최근순, 최대 100개). "우유 얼마였지", "계란 마지막에 얼마에 샀어", "이번 달 마트에서 뭐 샀어"처럼 품목·가격을 물을 때 쓴다. ' +
+      'text 는 품목명 부분일치. 같은 품목의 가격 변화는 결과의 date·unit_price/amount 로 비교해 알려 준다.',
+    needsConfirm: false,
+    inputSchema: { type: 'object', properties: { ...dateProps, text: { type: 'string', description: '품목명 검색어' }, merchant: { type: 'string' }, limit: { type: 'integer' } } },
+    describe: (i) => `FlowLedger 구매 품목 조회: ${[i.text, i.merchant].filter(Boolean).join(', ') || `${i.from ?? '최근'}`}`,
+    openLink: () => ({ app: 'flowledger', label: 'FlowLedger에서 구매 내역 보기', path: 'purchases' }),
+    async run(input) {
+      const arg: Record<string, unknown> = { limit: Math.min(Math.max(Number(input.limit) || 50, 1), 100) };
+      for (const k of ['from', 'to', 'text', 'merchant']) if (typeof input[k] === 'string' && input[k]) arg[k] = input[k];
+      return { source: 'FlowLedger', ...(await call('items', arg)) };
+    },
+  },
+  {
     name: 'flowledger_add',
     label: 'FlowLedger 거래 기록',
     description:
@@ -157,12 +190,13 @@ export const flowledgerTools: AgentTool[] = [
       '통장(account)은 사용자가 말했을 때만 넣는다: 말하지 않으면 앱이 자동 지정 규칙→기본 통장 순으로 고른다("카드로", "월급통장에서" 같은 말은 해당 통장 이름으로). ' +
       '분류(category)는 내용에서 가장 알맞은 소분류/대분류를 flowledger_accounts 의 이름 중에서 고른다(모르면 생략하면 기타). ' +
       '이체는 type=transfer 에 account(출금)와 to_account(입금)가 필요하다. 날짜를 말하지 않으면 오늘로 기록된다. 금액이 불분명하면 먼저 물어본다. ' +
+      '영수증 사진이 첨부되면 가맹점·날짜·품목(items)·할인·합계를 읽어 한 건으로 기록한다: 품목 합계가 총액과 맞는지 먼저 계산하고, 안 맞으면 읽은 줄을 다시 확인하거나 사용자에게 알린다. ' +
       '저장 후 결과의 account.balance_after 로 통장 잔액을 알려주고, 방금 건을 취소하려면 flowledger_delete 에 결과의 id 를 쓴다.',
     needsConfirm: true,
     skipConfirm: getAutoRecord,
     inputSchema: {
       type: 'object',
-      properties: { type: { type: 'string', enum: ['expense', 'income', 'transfer'], description: '지출/수입/이체' }, ...txProps, to_account: { type: 'string', description: '이체 입금 통장' } },
+      properties: { type: { type: 'string', enum: ['expense', 'income', 'transfer'], description: '지출/수입/이체' }, ...txProps, to_account: { type: 'string', description: '이체 입금 통장' }, items: itemsProp },
       required: ['type', 'amount'],
     },
     describe: (i) => `${i.type === 'expense' ? '지출' : i.type === 'income' ? '수입' : '이체'} 기록: ${Number(i.amount).toLocaleString('ko-KR')}원${i.category ? ` · ${i.category}` : ''}${i.merchant ? ` · ${i.merchant}` : ''}${i.account ? ` · ${i.account}` : ''}`,
@@ -188,7 +222,7 @@ export const flowledgerTools: AgentTool[] = [
     description: '기존 거래를 고친다(바꿀 항목만 보낸다). id 는 flowledger_transactions 결과의 id 를 그대로 쓴다(추측 금지). 후보가 여럿이면 사용자에게 어느 건인지 묻는다. 지움은 merchant/memo/tags/time 을 빈 문자열로.',
     needsConfirm: true,
     skipConfirm: getAutoRecord,
-    inputSchema: { type: 'object', properties: { id: { type: 'string' }, ...txProps, to_account: { type: 'string' } }, required: ['id'] },
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, ...txProps, to_account: { type: 'string' }, items: { ...itemsProp, description: '품목 전체 교체(빈 배열이면 품목 삭제). 합계는 총액과 같아야 한다' } }, required: ['id'] },
     describe: (i) => `거래 수정 (${String(i.id).slice(0, 10)}…): ${Object.keys(i).filter((k) => k !== 'id').join(', ')}`,
     async preview(input) {
       const a = buildUpdateArgs(input);
