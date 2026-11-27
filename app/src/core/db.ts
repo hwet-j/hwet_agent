@@ -27,6 +27,19 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
           manifest TEXT NOT NULL,
           enabled INTEGER NOT NULL DEFAULT 1
         );
+        CREATE TABLE IF NOT EXISTS activity (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts TEXT NOT NULL,
+          tool TEXT NOT NULL,
+          label TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          status TEXT NOT NULL,
+          user_text TEXT,
+          input TEXT,
+          result TEXT
+        );
+        CREATE INDEX IF NOT EXISTS activity_ts ON activity (ts DESC);
         CREATE TABLE IF NOT EXISTS kv (
           key TEXT PRIMARY KEY NOT NULL,
           value TEXT NOT NULL

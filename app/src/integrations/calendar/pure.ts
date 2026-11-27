@@ -202,3 +202,31 @@ export function describeEvent(e: GEventLite): string {
   }
   return [when, e.summary || '(제목 없음)', e.location].filter(Boolean).join(' · ');
 }
+
+// ---- 캘린더 앱 연동: calendarapp://assistant?cmd=… (읽기 query / 날짜 화면 show)
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+const cmdId = (now: number, rnd: () => number) => `${now.toString(36)}${rnd().toString(36).slice(2, 8)}`;
+
+function ymdOf(v: unknown, field: string): string {
+  if (typeof v !== 'string' || !YMD.test(v)) throw new Error(`${field} 는 YYYY-MM-DD 형식이어야 해요`);
+  return v;
+}
+
+/** 캘린더 앱에 일정 조회를 요청하는 링크. from/to 를 주지 않으면 앱이 오늘부터 14일을 돌려준다 */
+export function buildCalendarEventsQuery(
+  i: Record<string, unknown>,
+  now: number = Date.now(),
+  rnd: () => number = Math.random,
+): { id: string; url: string } {
+  const id = cmdId(now, rnd);
+  const cmd: Record<string, unknown> = { v: 1, id, ts: now, op: 'query', what: 'events' };
+  if (i.from != null) cmd.from = ymdOf(i.from, 'from');
+  if (i.to != null) cmd.to = ymdOf(i.to, 'to');
+  return { id, url: `calendarapp://assistant?cmd=${encodeURIComponent(JSON.stringify(cmd))}` };
+}
+
+/** 캘린더 앱에서 그 날짜를 여는 링크 */
+export function buildCalendarShowLink(date: string, now: number = Date.now(), rnd: () => number = Math.random): string {
+  const cmd = { v: 1, id: cmdId(now, rnd), ts: now, op: 'show', date: ymdOf(date, 'date') };
+  return `calendarapp://assistant?cmd=${encodeURIComponent(JSON.stringify(cmd))}`;
+}

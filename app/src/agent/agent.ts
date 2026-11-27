@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { fetch as expoFetch } from 'expo/fetch';
 
+import { kindOf, statusOf, summarize, type ToolOutcome } from './activityPure';
 import { stripThinking, type History } from './history';
+import type { ActivityKind, ActivityStatus } from '../core/activityTypes';
 import type { AgentTool } from './tool';
 
 export type { History } from './history';
@@ -29,7 +31,15 @@ function systemPrompt(): string {
     '',
     '[월세·세입자 (LeaseLog)] 납부 기록이나 세입자 등록은 LeaseLog 앱의 확인 화면을 여는 방식입니다. 도구가 성공해도 아직 저장된 것이 아니므로',
     '"기록했어요"가 아니라 "LeaseLog에서 확인하고 저장해 주세요"라고 안내하세요. 호실·금액이 없으면 먼저 물어보고, 금액은 원 단위 정수로 바꾸세요(45만원 → 450000).',
-    '비서는 LeaseLog 의 값(수입, 미납 등)을 읽을 수 없습니다. "저번 달 월 수입", "이번 달 미납" 같은 질문은 숫자를 추측하지 말고 leaselog_show_screen 으로 해당 화면을 열어 주고 화면에서 확인하라고 안내하세요.',
+    'LeaseLog 의 값(월 수입, 미납, 공실, 만기 등)은 leaselog_query 로 읽어서 답하세요. 숫자를 추측하지 말고, 호출하면 LeaseLog 가 잠깐 열렸다 비서로 돌아옵니다.',
+    '결과는 핵심만 요약해 말하고(금액은 천 단위 쉼표와 "원"), 목록이 길면 상위 몇 건만 보여 준 뒤 더 볼지 물어보세요. 채팅 아래에 LeaseLog 해당 화면을 여는 버튼이 자동으로 붙으니 "아래 버튼으로 LeaseLog 에서 볼 수 있어요"라고 안내하면 됩니다.',
+    '조회 결과가 비어 있거나 오류면 그대로 알리고, 업데이트(LeaseLog 1.7.0 이상)가 필요할 수 있다고 안내하세요. 사용자가 화면을 직접 보고 싶다고 하면 leaselog_show_screen 을 쓰세요.',
+    '미납 안내 문자 같은 글 초안은 직접 작성해 보여 주고, 원하면 copy_to_clipboard 로 복사하세요. 연락처는 비서가 받지 못하므로 전화번호를 지어내지 마세요.',
+    '',
+    '[캘린더 앱 읽기] 캘린더 앱에만 있는 일정("이번 주 뭐 있어?")은 calendar_app_events 로 읽을 수 있고(구글 연결이 있으면 gcal_list_events 우선), 채팅에 앱 열기 버튼이 붙습니다.',
+    '',
+    '[기타] "30분 뒤에 알려줘"처럼 시각에 알림만 필요하면 set_reminder(미래 시각 ISO)를 쓰고, 예약된 알림은 list_reminders / cancel_reminder 로 확인·취소합니다.',
+    '할 일·메모를 고칠 때는 먼저 list_tasks / search_notes 로 id 를 확인하세요(update_task, update_note).',
     '주민등록번호·계좌번호 같은 민감 정보는 요청하지도 전달하지도 마세요.',
   ].join('\n');
 }
@@ -51,9 +61,22 @@ export type RunOptions = {
   tools: AgentTool[];
   /** 확인이 필요한 도구 실행 전 호출. false 를 돌려주면 실행하지 않는다. */
   confirm: (tool: AgentTool, input: Record<string, unknown>) => Promise<boolean>;
+  /** 도구 호출이 끝날 때마다 호출 (활동 기록 탭용). 실패해도 비서 동작에는 영향 없음 */
+  onActivity?: (a: ActivityEvent) => void;
   /** 히스토리가 바뀔 때마다 호출 (화면 갱신·저장용) */
   onUpdate: (history: History) => void;
   signal?: AbortSignal;
+};
+
+export type ActivityEvent = {
+  tool: string;
+  label: string;
+  summary: string;
+  kind: ActivityKind;
+  status: ActivityStatus;
+  userText: string;
+  input: Record<string, unknown>;
+  result: string;
 };
 
 function clip(value: unknown): string {
@@ -103,17 +126,30 @@ export async function runTurn(opts: RunOptions): Promise<History> {
       const input = (block.input ?? {}) as Record<string, unknown>;
       let content: string;
       let isError = false;
+      let outcome: ToolOutcome = 'ok';
       try {
         if (!tool) throw new Error(`알 수 없는 도구: ${block.name}`);
         if (tool.needsConfirm && !(await opts.confirm(tool, input))) {
           content = '사용자가 이 작업을 거부했습니다. 실행하지 않았습니다.';
           isError = true;
+          outcome = 'denied';
         } else {
           content = clip(await tool.run(input));
         }
       } catch (e) {
         content = e instanceof Error ? e.message : String(e);
         isError = true;
+        outcome = 'error';
+      }
+      if (tool && opts.onActivity) {
+        try {
+          opts.onActivity({
+            tool: tool.name, label: tool.label, summary: summarize(tool, input), kind: kindOf(tool),
+            status: statusOf(tool, outcome), userText: opts.userText, input, result: content,
+          });
+        } catch {
+          /* 기록 실패는 무시 */
+        }
       }
       results.push({ type: 'tool_result', tool_use_id: block.id, content, is_error: isError });
     }

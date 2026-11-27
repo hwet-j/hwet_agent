@@ -10,11 +10,16 @@ export default function AppTabs() {
   return (
     <NativeTabs
       backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
+      indicatorColor={colors.accentSoft}
+      labelStyle={{ selected: { color: colors.accent } }}
+      iconColor={{ selected: colors.accent }}>
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Label>비서</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon md="chat" />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="history">
+        <NativeTabs.Trigger.Label>기록</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon md="history" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="connectors">
         <NativeTabs.Trigger.Label>연동 앱</NativeTabs.Trigger.Label>

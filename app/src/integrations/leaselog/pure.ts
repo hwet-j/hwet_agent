@@ -125,3 +125,48 @@ export function buildLeaselogLink(
   const cmd = { v: 1, id: newId(now, rnd), ts: now, op, ...body };
   return `rentmanager://assistant?cmd=${encodeURIComponent(JSON.stringify(cmd))}`;
 }
+
+// ---- 읽기(query): LeaseLog 가 요약을 비서 앱으로 돌려준다 (연락처·주민번호·계좌·메모는 LeaseLog 쪽에서 아예 보내지 않음)
+export const QUERY_WHATS = ['overview', 'income', 'unpaid', 'payments', 'rooms', 'tenants'] as const;
+export type QueryWhat = (typeof QUERY_WHATS)[number];
+
+export function buildQueryRequest(i: Record<string, unknown>): { what: QueryWhat; year?: number; ym?: string } {
+  if (typeof i.what !== 'string' || !(QUERY_WHATS as readonly string[]).includes(i.what)) {
+    throw new Error(`what 은 ${QUERY_WHATS.join(', ')} 중 하나여야 해요`);
+  }
+  const out: { what: QueryWhat; year?: number; ym?: string } = { what: i.what as QueryWhat };
+  if (i.year != null) {
+    if (typeof i.year !== 'number' || !Number.isInteger(i.year) || i.year < 2000 || i.year > 2100) throw new Error('year 는 2000~2100 사이 정수여야 해요');
+    out.year = i.year;
+  }
+  if (i.month != null) {
+    if (typeof i.month !== 'string' || !YM.test(i.month)) throw new Error('month 는 YYYY-MM 형식이어야 해요');
+    out.ym = i.month;
+  }
+  return out;
+}
+
+/** 조회 요청 링크와 요청 id (결과를 기다릴 때 id 로 맞춰 본다) */
+export function buildLeaselogQueryLink(
+  input: Record<string, unknown>,
+  now: number = Date.now(),
+  rnd: () => number = Math.random,
+): { id: string; url: string } {
+  const id = newId(now, rnd);
+  const cmd = { v: 1, id, ts: now, op: 'query', ...buildQueryRequest(input) };
+  return { id, url: `rentmanager://assistant?cmd=${encodeURIComponent(JSON.stringify(cmd))}` };
+}
+
+/** 조회 종류 → 같은 내용을 LeaseLog 에서 직접 볼 수 있는 화면 */
+export function screenForQuery(i: Record<string, unknown>): Record<string, unknown> | null {
+  const what = i.what;
+  const month = typeof i.month === 'string' && YM.test(i.month) ? i.month : undefined;
+  const year = typeof i.year === 'number' ? i.year : undefined;
+  if (what === 'income') return { screen: 'income', ...(month ? { month } : year ? { year } : {}) };
+  if (what === 'unpaid') return { screen: 'payments', filter: 'unpaid', ...(month ? { month } : {}) };
+  if (what === 'payments') return { screen: 'payments', ...(month ? { month } : {}) };
+  if (what === 'rooms') return { screen: 'rooms' };
+  if (what === 'tenants') return { screen: 'tenants' };
+  if (what === 'overview') return { screen: 'home' };
+  return null;
+}

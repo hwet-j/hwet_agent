@@ -8,26 +8,37 @@ import { fileURLToPath } from 'node:url';
 const { chromium } = createRequire(import.meta.url)('playwright');
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../assets/images');
 
-const GRAD = ['#4F46E5', '#2563EB']; // 인디고 → 블루
+const BG = ['#0B5F57', '#19B7A5']; // 짙은 청록 → 밝은 청록
 const defs = `<defs>
-  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${GRAD[0]}"/><stop offset="1" stop-color="${GRAD[1]}"/></linearGradient>
-  <linearGradient id="sp" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${GRAD[0]}"/><stop offset="1" stop-color="${GRAD[1]}"/></linearGradient>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${BG[0]}"/><stop offset="1" stop-color="${BG[1]}"/></linearGradient>
+  <linearGradient id="card" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E6F6F3"/></linearGradient>
 </defs>`;
 
-// 말풍선(꼬리 왼쪽 아래) — 둥근 이음새를 위해 같은 색 외곽선을 둔다
-const bubblePath = 'M382 262H642A150 150 0 0 1 792 412V532A150 150 0 0 1 642 682H500L330 812L392 682H382A150 150 0 0 1 232 532V412A150 150 0 0 1 382 262Z';
-const sparkle = 'M512 352C524 432 552 460 632 472C552 484 524 512 512 592C500 512 472 484 392 472C472 460 500 432 512 352Z';
-const small = 'translate(676 376) scale(.3) translate(-512 -472)';
+// 할 일 카드: 둥근 사각형 + 3줄 체크리스트(첫 줄은 완료) + 오른쪽 위 알림 점
+const CARD = { x: 290, y: 250, w: 440, h: 524, r: 70 };
+const rows = [398, 512, 626];
 
-/** 말풍선 + 반짝이. 말풍선 높이가 한쪽으로 쏠려 있어 y 를 -25 올려 가운데로 맞춘다. */
-const glyph = ({ bubble = '#fff', spark = 'url(#sp)', cut = false, color = '#000' } = {}) => {
-  if (cut) {
-    // 단색 아이콘(Android 테마 아이콘·알림): 반짝이 부분을 뚫는다
-    return `<g transform="translate(0 -25)"><mask id="m"><rect width="1024" height="1100" fill="#fff"/><path d="${sparkle}" fill="#000"/><path d="${sparkle}" transform="${small}" fill="#000"/></mask>
-      <path d="${bubblePath}" fill="${color}" stroke="${color}" stroke-width="28" stroke-linejoin="round" mask="url(#m)"/></g>`;
+const checkPath = 'M370 398L388 418L424 376'; // 첫 줄 체크 표시
+
+/** mono=true: 한 가지 색(알림 아이콘·테마 아이콘). 카드에서 줄과 원을 뚫어 윤곽만 남긴다 */
+const glyph = ({ mono = false, color = '#000' } = {}) => {
+  if (mono) {
+    const holes = rows.map((y, i) => `<circle cx="392" cy="${y}" r="40" fill="#000"/><rect x="468" y="${y - 15}" width="${i === 0 ? 212 : i === 1 ? 180 : 150}" height="30" rx="15" fill="#000"/>`).join('');
+    return `<g><mask id="m"><rect width="1024" height="1024" fill="#fff"/>${holes}<circle cx="728" cy="290" r="84" fill="#000"/></mask>
+      <rect x="${CARD.x}" y="${CARD.y}" width="${CARD.w}" height="${CARD.h}" rx="${CARD.r}" fill="${color}" mask="url(#m)"/>
+      <path d="${checkPath}" fill="none" stroke="${color}" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="728" cy="290" r="58" fill="${color}"/></g>`;
   }
-  return `<g transform="translate(0 -25)"><path d="${bubblePath}" fill="${bubble}" stroke="${bubble}" stroke-width="28" stroke-linejoin="round"/>
-    <path d="${sparkle}" fill="${spark}"/><path d="${sparkle}" transform="${small}" fill="${spark}"/></g>`;
+  const lines = rows.map((y, i) =>
+    (i === 0
+      ? '<circle cx="392" cy="' + y + '" r="40" fill="#0E9F8E"/>' + `<path d="${checkPath}" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>`
+      : `<circle cx="392" cy="${y}" r="40" fill="none" stroke="#A9DAD3" stroke-width="14"/>`) +
+    `<rect x="468" y="${y - 15}" width="${i === 0 ? 212 : i === 1 ? 180 : 150}" height="30" rx="15" fill="${i === 0 ? '#0B5F57' : '#C4E6E1'}"/>`).join('');
+  return `<g>
+    <rect x="${CARD.x}" y="${CARD.y + 14}" width="${CARD.w}" height="${CARD.h}" rx="${CARD.r}" fill="#000" opacity=".16"/>
+    <rect x="${CARD.x}" y="${CARD.y}" width="${CARD.w}" height="${CARD.h}" rx="${CARD.r}" fill="url(#card)"/>
+    ${lines}
+    <circle cx="728" cy="290" r="76" fill="#FF6B57" stroke="#fff" stroke-width="22"/></g>`;
 };
 
 const svg = (size, inner) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 1024 1024">${defs}${inner}</svg>`;
@@ -37,12 +48,12 @@ const files = {
   'icon.png': { size: 1024, svg: svg(1024, bgRect + glyph()), opaque: true },
   'android-icon-background.png': { size: 1024, svg: svg(1024, bgRect), opaque: true },
   'android-icon-foreground.png': { size: 1024, svg: svg(1024, glyph()) },
-  'android-icon-monochrome.png': { size: 1024, svg: svg(1024, glyph({ cut: true })) },
-  // 스플래시/시작 화면: 인디고 배경 위에 얹으므로 흰 말풍선 + 인디고 반짝이, 여백을 넉넉히
-  'splash-icon.png': { size: 512, svg: svg(512, glyph({ spark: GRAD[0] })) },
+  'android-icon-monochrome.png': { size: 1024, svg: svg(1024, glyph({ mono: true })) },
+  // 스플래시: 청록 배경(app.json) 위에 얹으므로 배경 없이 카드만
+  'splash-icon.png': { size: 512, svg: svg(512, glyph()) },
   'favicon.png': { size: 48, svg: svg(48, bgRect + glyph()), opaque: true },
   // 알림 작은 아이콘: 흰색 단색 + 투명 (Android 가 색을 입힌다)
-  'notification-icon.png': { size: 96, svg: svg(96, glyph({ cut: true, color: '#fff' })) },
+  'notification-icon.png': { size: 96, svg: svg(96, glyph({ mono: true, color: '#fff' })) },
 };
 
 const browser = await chromium.launch();

@@ -7,6 +7,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Pressable,
   StyleSheet,
   TextInput,
@@ -16,21 +17,42 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { runTurn, trimHistory, type History } from '@/agent/agent';
 import { loadHistory, saveHistory } from '@/agent/chatStore';
-import type { AgentTool } from '@/agent/tool';
+import { summarize } from '@/agent/activityPure';
+import type { AgentTool, OpenLink } from '@/agent/tool';
 import { builtinTools } from '@/builtin/tools';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { logActivity } from '@/core/activity';
 import { BRIEFING_PROMPT } from '@/core/briefing';
 import { getApiKey, getModel } from '@/core/settings';
 import { loadConnectorTools } from '@/connectors/registry';
-import { integrationTools } from '@/integrations';
+import { allIntegrationTools, integrationTools } from '@/integrations';
+import { buildCalendarShowLink } from '@/integrations/calendar/pure';
+import { buildLeaselogLink } from '@/integrations/leaselog/pure';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-type Item = { key: string; kind: 'user' | 'assistant' | 'tool'; text: string };
+type Item =
+  | { key: string; kind: 'user' | 'assistant'; text: string }
+  | { key: string; kind: 'tool'; tool: string; text: string; icon: string; failed: boolean }
+  | { key: string; kind: 'link'; link: OpenLink };
 
-/** 저장된 API 히스토리를 화면용 말풍선 목록으로 바꾼다. tool_result 는 숨긴다. */
+const META = new Map<string, AgentTool>([...builtinTools, ...allIntegrationTools()].map((t) => [t.name, t]));
+const SUGGESTIONS = [
+  '이번 주 일정 알려줘',
+  '저번 달 월 수입 알려줘',
+  '이번 달 미납 있어?',
+  '내일 오후 3시 치과 약속 잡아줘',
+  '남은 할 일 정리해줘',
+];
+
+/** 저장된 API 히스토리를 화면용 목록으로 바꾼다. tool_result 는 숨기되 실패 여부만 도구 칩에 반영한다. */
 function toItems(history: History): Item[] {
+  const failed = new Set<string>();
+  for (const m of history) {
+    if (m.role !== 'user' || typeof m.content === 'string') continue;
+    for (const b of m.content as Anthropic.ContentBlockParam[]) if (b.type === 'tool_result' && b.is_error) failed.add(b.tool_use_id);
+  }
   const items: Item[] = [];
   history.forEach((m, i) => {
     if (typeof m.content === 'string') {
@@ -40,10 +62,31 @@ function toItems(history: History): Item[] {
     if (m.role !== 'assistant') return;
     (m.content as Anthropic.ContentBlockParam[]).forEach((b, j) => {
       if (b.type === 'text' && b.text.trim()) items.push({ key: `${i}-${j}`, kind: 'assistant', text: b.text });
-      if (b.type === 'tool_use') items.push({ key: `${i}-${j}`, kind: 'tool', text: `도구 실행: ${b.name}` });
+      if (b.type === 'tool_use') {
+        const t = META.get(b.name);
+        const input = (b.input ?? {}) as Record<string, unknown>;
+        const ok = !failed.has(b.id);
+        items.push({
+          key: `${i}-${j}`, kind: 'tool', tool: b.name, failed: !ok,
+          text: t ? summarize(t, input) : b.name,
+          icon: !t ? '•' : t.handoff ? '↗' : t.readOnly ? '🔎' : '✏️',
+        });
+        // 조회·화면 열기 도구는 해당 앱 화면을 여는 버튼을 붙인다 (성공했을 때만)
+        const link = ok ? t?.openLink?.(input) : null;
+        if (link) items.push({ key: `${i}-${j}-l`, kind: 'link', link });
+      }
     });
   });
   return items;
+}
+
+async function openAppLink(link: OpenLink) {
+  const url = link.app === 'leaselog' ? buildLeaselogLink('show', link.input) : buildCalendarShowLink(link.date);
+  try {
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert('앱을 열 수 없어요', `${link.app === 'leaselog' ? 'LeaseLog' : '캘린더'} 앱이 설치되어 있는지 확인해 주세요.`);
+  }
 }
 
 async function askConfirm(tool: AgentTool, input: Record<string, unknown>): Promise<boolean> {
@@ -112,6 +155,12 @@ export default function ChatScreen() {
         userText,
         tools,
         confirm: askConfirm,
+        onActivity: (a) => {
+          void logActivity({
+            tool: a.tool, label: a.label, summary: a.summary, kind: a.kind, status: a.status,
+            user_text: a.userText, input: a.input, result: a.result,
+          });
+        },
         onUpdate: (h) => {
           historyRef.current = h;
           setHistory(h);
@@ -150,40 +199,111 @@ export default function ChatScreen() {
   }, [lastResponse, send]);
 
   const items = useMemo(() => toItems(history), [history]);
+  const listRef = useRef<FlatList<Item>>(null);
+  const last = items[items.length - 1];
+  // 비서가 일하는 중(마지막이 내 말이거나 도구 호출)이면 "생각 중" 표시
+  const thinking = busy && (!last || last.kind === 'user' || last.kind === 'tool' || last.kind === 'link');
+
+  const newChat = () =>
+    Alert.alert('새 대화를 시작할까요?', '지금까지의 대화 내용이 지워져요. (활동 기록 탭의 기록은 남아요)', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '새 대화',
+        style: 'destructive',
+        onPress: async () => {
+          await saveHistory([]);
+          historyRef.current = [];
+          setHistory([]);
+          setError(null);
+        },
+      },
+    ]);
 
   return (
     <ThemedView style={styles.flex}>
       <SafeAreaView style={styles.flex} edges={['top']}>
+        <View style={styles.header}>
+          <ThemedText type="subtitle" style={styles.title}>
+            비서
+          </ThemedText>
+          {items.length > 0 && !busy && (
+            <Pressable accessibilityRole="button" accessibilityLabel="새 대화" onPress={newChat} hitSlop={8}
+              style={[styles.newChat, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText type="small">새 대화</ThemedText>
+            </Pressable>
+          )}
+        </View>
         <KeyboardAvoidingView style={styles.flex} behavior="padding">
           <FlatList
+            ref={listRef}
             data={items}
             keyExtractor={(i) => i.key}
             contentContainerStyle={styles.list}
+            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+            keyboardShouldPersistTaps="handled"
             ListEmptyComponent={
-              <ThemedText themeColor="textSecondary" style={styles.empty}>
-                「내일 오후 3시에 치과 예약 할 일로 추가해줘」처럼 말해 보세요.
-              </ThemedText>
-            }
-            renderItem={({ item }) =>
-              item.kind === 'tool' ? (
-                <ThemedText type="small" themeColor="textSecondary" style={styles.tool}>
-                  {item.text}
+              <View style={styles.emptyBox}>
+                <ThemedText type="subtitle" style={styles.emptyTitle}>
+                  무엇을 도와드릴까요?
                 </ThemedText>
-              ) : (
-                <View
-                  style={[
-                    styles.bubble,
-                    item.kind === 'user'
-                      ? { alignSelf: 'flex-end', backgroundColor: theme.backgroundSelected }
-                      : { alignSelf: 'flex-start', backgroundColor: theme.backgroundElement },
-                  ]}>
-                  <ThemedText selectable>{item.text}</ThemedText>
+                <ThemedText themeColor="textSecondary" style={styles.emptySub}>
+                  일정·할 일·메모, 월세(LeaseLog)와 캘린더 앱까지 말로 처리해요.
+                </ThemedText>
+                <View style={styles.chips}>
+                  {SUGGESTIONS.map((q) => (
+                    <Pressable key={q} accessibilityRole="button" onPress={() => send(q)} disabled={busy}
+                      style={[styles.chip, { backgroundColor: theme.accentSoft }]}>
+                      <ThemedText type="small" style={{ color: theme.accent }}>
+                        {q}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
                 </View>
-              )
+              </View>
             }
+            ListFooterComponent={
+              thinking ? (
+                <View style={[styles.bubble, styles.thinking, { backgroundColor: theme.backgroundElement }]}>
+                  <ActivityIndicator size="small" color={theme.accent} />
+                  <ThemedText type="small" themeColor="textSecondary">
+                    생각 중…
+                  </ThemedText>
+                </View>
+              ) : undefined
+            }
+            renderItem={({ item }) => {
+              if (item.kind === 'tool') {
+                return (
+                  <View style={[styles.toolChip, { backgroundColor: item.failed ? theme.danger + '22' : theme.backgroundElement }]}>
+                    <ThemedText type="small" style={{ color: item.failed ? theme.danger : theme.textSecondary }} numberOfLines={2}>
+                      {item.icon} {item.text}
+                      {item.failed ? ' · 실패' : ''}
+                    </ThemedText>
+                  </View>
+                );
+              }
+              if (item.kind === 'link') {
+                return (
+                  <Pressable accessibilityRole="button" onPress={() => openAppLink(item.link)}
+                    style={[styles.linkBtn, { borderColor: theme.accent }]}>
+                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                      ↗ {item.link.label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              }
+              const mine = item.kind === 'user';
+              return (
+                <View style={[styles.bubble, mine ? [styles.mine, { backgroundColor: theme.accent }] : [styles.theirs, { backgroundColor: theme.backgroundElement }]]}>
+                  <ThemedText selectable style={mine ? { color: '#fff' } : undefined}>
+                    {item.text}
+                  </ThemedText>
+                </View>
+              );
+            }}
           />
           {error && (
-            <ThemedText type="small" style={styles.error}>
+            <ThemedText type="small" style={[styles.error, { color: theme.danger }]}>
               {error}
             </ThemedText>
           )}
@@ -202,12 +322,8 @@ export default function ChatScreen() {
               accessibilityLabel="보내기"
               disabled={busy || !input.trim()}
               onPress={() => send(input)}
-              style={[styles.send, { backgroundColor: theme.text, opacity: busy || !input.trim() ? 0.4 : 1 }]}>
-              {busy ? (
-                <ActivityIndicator color={theme.background} />
-              ) : (
-                <ThemedText style={{ color: theme.background }}>보내기</ThemedText>
-              )}
+              style={[styles.send, { backgroundColor: theme.accent, opacity: busy || !input.trim() ? 0.4 : 1 }]}>
+              {busy ? <ActivityIndicator color="#fff" /> : <ThemedText style={styles.sendIcon}>↑</ThemedText>}
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -218,18 +334,24 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.three, paddingTop: Spacing.two, paddingBottom: Spacing.one },
+  title: { fontSize: 28, lineHeight: 36 },
+  newChat: { borderRadius: 16, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one + 2 },
   list: { padding: Spacing.three, gap: Spacing.two, flexGrow: 1 },
-  empty: { textAlign: 'center', marginTop: Spacing.six },
-  bubble: { maxWidth: '85%', padding: Spacing.three, borderRadius: 16 },
-  tool: { alignSelf: 'center' },
-  error: { color: '#D93025', paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: Spacing.two,
-    padding: Spacing.two,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  input: { flex: 1, maxHeight: 120, borderRadius: 20, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
-  send: { borderRadius: 20, paddingHorizontal: Spacing.three, height: 44, justifyContent: 'center' },
+  emptyBox: { marginTop: Spacing.five, gap: Spacing.two, alignItems: 'center' },
+  emptyTitle: { textAlign: 'center' },
+  emptySub: { textAlign: 'center', marginBottom: Spacing.three },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: Spacing.two },
+  chip: { borderRadius: 18, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  bubble: { maxWidth: '86%', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two + 2, borderRadius: 18 },
+  mine: { alignSelf: 'flex-end', borderBottomRightRadius: 6 },
+  theirs: { alignSelf: 'flex-start', borderBottomLeftRadius: 6 },
+  thinking: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  toolChip: { alignSelf: 'flex-start', maxWidth: '92%', borderRadius: 12, paddingHorizontal: Spacing.two + 2, paddingVertical: Spacing.one + 1 },
+  linkBtn: { alignSelf: 'flex-start', borderWidth: 1.5, borderRadius: 16, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  error: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.two },
+  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.two, padding: Spacing.two, borderTopWidth: StyleSheet.hairlineWidth },
+  input: { flex: 1, maxHeight: 120, borderRadius: 22, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two + 2, fontSize: 16 },
+  send: { borderRadius: 22, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  sendIcon: { color: '#fff', fontSize: 22, lineHeight: 26, fontWeight: '700' },
 });
