@@ -22,6 +22,8 @@ import {
   setApiKey,
   setBriefing,
   setModel,
+  getBriefReply,
+  setBriefReply,
 } from '@/core/settings';
 
 const clamp = (v: string, max: number) => Math.min(max, Math.max(0, parseInt(v, 10) || 0));
@@ -36,11 +38,13 @@ export default function SettingsScreen() {
   const [gConnected, setGConnected] = useState(false);
   const [gEmail, setGEmail] = useState<string | null>(null);
   const [autoRecord, setAutoRecord] = useState(false);
+  const [brief, setBrief] = useState(true);
   const [voice, setVoice] = useState<VoiceSettings>({ tts: true, relisten: false, openListen: false });
   const googleLogin = useGoogleLogin();
 
   useEffect(() => {
     getAutoRecord().then(setAutoRecord);
+    getBriefReply().then(setBrief);
     getVoiceSettings().then(setVoice);
   }, []);
 
@@ -160,6 +164,19 @@ export default function SettingsScreen() {
                 onValueChange={async (v) => {
                   setAutoRecord(v);
                   await kvSet('flowledger_auto', v ? '1' : '0');
+                }}
+              />
+            </View>
+          </Section>
+
+          <Section title="답변 길이" hint={`켜면 핵심만 한두 문장으로 짧게 답하고, 더 필요하면 자세히 알려 달라고 말하면 길게 답해요.`}>
+            <View style={styles.row}>
+              <ThemedText style={styles.flex}>간략하게 답하기</ThemedText>
+              <Switch
+                value={brief}
+                onValueChange={async (v) => {
+                  setBrief(v);
+                  await setBriefReply(v);
                 }}
               />
             </View>

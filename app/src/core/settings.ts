@@ -36,3 +36,9 @@ export async function getBriefing(): Promise<BriefingSettings> {
   }
 }
 export const setBriefing = (b: BriefingSettings) => kvSet('briefing', JSON.stringify(b));
+
+/** 답변을 핵심만 간략하게 (기본 켜짐) */
+export async function getBriefReply(): Promise<boolean> {
+  return (await kvGet('reply_brief')) !== '0';
+}
+export const setBriefReply = (v: boolean) => kvSet('reply_brief', v ? '1' : '0');

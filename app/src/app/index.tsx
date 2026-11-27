@@ -31,7 +31,7 @@ import { logActivity } from '@/core/activity';
 import { pickPhoto, takePhoto, type Attachment } from '@/core/image';
 import { getVoiceSettings, type VoiceSettings } from '@/voice/settings';
 import { BRIEFING_PROMPT } from '@/core/briefing';
-import { getApiKey, getModel } from '@/core/settings';
+import { getApiKey, getBriefReply, getModel } from '@/core/settings';
 import { loadConnectorTools } from '@/connectors/registry';
 import { allIntegrationTools, integrationTools } from '@/integrations';
 import { buildCalendarShowLink } from '@/integrations/calendar/pure';
@@ -218,6 +218,7 @@ export default function ChatScreen() {
       const final = await runTurn({
         apiKey,
         model: await getModel(),
+        brief: await getBriefReply(),
         history: trimHistory(historyRef.current),
         userText,
         images: imgs,
@@ -317,6 +318,7 @@ export default function ChatScreen() {
         <KeyboardAvoidingView style={styles.flex} behavior="padding">
           <FlatList
             ref={listRef}
+            style={styles.flex}
             data={items}
             keyExtractor={(i) => i.key}
             contentContainerStyle={styles.list}
@@ -412,7 +414,7 @@ export default function ChatScreen() {
             </View>
           )}
           {!busy && !input && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.quick}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={styles.quickScroll} contentContainerStyle={styles.quick}>
               {QUICK.map((qq) => (
                 <Pressable key={qq} accessibilityRole="button" onPress={() => send(qq)} style={[styles.quickChip, { backgroundColor: theme.backgroundElement }]}>
                   <ThemedText type="small">{qq}</ThemedText>
@@ -489,6 +491,8 @@ const styles = StyleSheet.create({
   linkBtn: { alignSelf: 'flex-start', borderWidth: 1.5, borderRadius: 16, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   errorBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginHorizontal: Spacing.two, marginBottom: Spacing.one, padding: Spacing.two + 2, borderRadius: 12 },
   onboard: { alignSelf: 'stretch', borderRadius: 16, padding: Spacing.three, gap: 2, marginBottom: Spacing.three },
+  // 가로 ScrollView 는 기본이 flexGrow:1 이라 그대로 두면 채팅 목록과 세로 공간을 나눠 가져 화면이 깨진다
+  quickScroll: { flexGrow: 0, flexShrink: 0 },
   quick: { gap: Spacing.two, paddingHorizontal: Spacing.two, paddingBottom: Spacing.two },
   quickChip: { borderRadius: 16, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one + 3 },
   thumbs: { flexDirection: 'row', gap: Spacing.two, paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
