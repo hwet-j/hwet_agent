@@ -118,3 +118,23 @@ test('놓친 복약 메시지', () => {
   assert.equal(m.title, '아직 체크 안 한 약이 있어요');
   assert.match(m.body, /^09:00 비타민\n/);
 });
+
+import { latestAssistantRelease, shouldNotify } from '../src/automation/updatePure.ts';
+
+test('새 버전: assistant-apk 태그 중 최대 번호, 같은 번호는 한 번만', () => {
+  const rel = [
+    { tag_name: 'assistant-apk-27', html_url: 'u27' },
+    { tag_name: 'apps-latest', html_url: 'x' },
+    { tag_name: 'assistant-apk-30', html_url: 'u30' },
+    { tag_name: 'assistant-apk-31', html_url: 'u31', draft: true },
+    { tag_name: 'assistant-apk-9', html_url: 'u9' },
+  ];
+  const l = latestAssistantRelease(rel);
+  assert.deepEqual(l, { n: 30, tag: 'assistant-apk-30', url: 'u30' });
+  assert.equal(shouldNotify(29, l, 0), true);
+  assert.equal(shouldNotify(30, l, 0), false); // 이미 최신
+  assert.equal(shouldNotify(29, l, 30), false); // 이미 알림
+  assert.equal(shouldNotify(0, l, 0), false); // 개발 빌드
+  assert.equal(latestAssistantRelease('x'), null);
+  assert.equal(shouldNotify(1, null, 0), false);
+});
