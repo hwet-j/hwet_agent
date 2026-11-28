@@ -23,7 +23,7 @@ async function open(op: LeaselogOp, input: Record<string, unknown>, what: string
 }
 
 /** LeaseLog 에 조회를 요청하고, LeaseLog 가 비서로 돌려보내는 결과를 기다린다 (잠깐 LeaseLog 로 갔다가 자동으로 돌아옴) */
-async function query(input: Record<string, unknown>) {
+export async function query(input: Record<string, unknown>) {
   buildLeaselogQueryLink(input); // 입력 검증만 (실패 시 예외)
   // 1순위: 앱을 열지 않고 백그라운드로 스냅샷을 읽는다 (LeaseLog 1.8.0 이상)
   const snap = await readSnapshot('leaselog');
