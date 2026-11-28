@@ -8,6 +8,7 @@ import { readSnapshot } from '@/integrations/snapshot';
 import { pickCalendar, pickLeaselog } from '@/integrations/snapshotPure';
 import { AUTHORITY as ROUTINE_AUTHORITY, dayItems, type RoutineQuery } from '@/integrations/routinelog/pure';
 import { buildDigest, isDue, type DigestInput } from './digestPure';
+import { expiryDue, occupiedRooms, payDayToday, type Stages } from './leasePure';
 
 export type DigestSettings = { enabled: boolean; hour: number; minute: number; lastSent?: string };
 const DEFAULT: DigestSettings = { enabled: false, hour: 8, minute: 0 };
@@ -28,6 +29,13 @@ export const setDigestSettings = (s: DigestSettings) => kvSet(KEY, JSON.stringif
 const pad = (n: number) => String(n).padStart(2, '0');
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
+const STAGES_KEY = 'lease_expiry_stages';
+async function getExpiryStages(): Promise<Stages> {
+  try { return JSON.parse((await kvGet(STAGES_KEY)) ?? '{}') as Stages; } catch { return {}; }
+}
+/** 이번 수집에서 계산한 만기 단계 (알림을 실제로 보낸 뒤에만 저장한다) */
+let pendingStages: Stages | null = null;
+
 /** 각 앱을 앱 화면을 열지 않고 읽는다. 어느 하나가 실패해도(앱 없음·구버전) 나머지로 만든다 */
 export async function gatherDigestInput(now = new Date()): Promise<DigestInput> {
   const today = ymd(now);
@@ -41,6 +49,20 @@ export async function gatherDigestInput(now = new Date()): Promise<DigestInput> 
         const d = p.data as any;
         const items: any[] = Array.isArray(d) ? d : Array.isArray(d?.items) ? d.items : [];
         out.unpaid = items.map((u) => ({ room: String(u.room ?? ''), building: u.building ? String(u.building) : undefined, remaining: Number(u.remaining) || 0, overdue: !!u.overdue }));
+      }
+    }
+  } catch { /* LeaseLog 없음 */ }
+
+  try {
+    const s = await readSnapshot('leaselog');
+    if (s.ok) {
+      const p = pickLeaselog(s.snapshot, { what: 'rooms' });
+      if (p.ok) {
+        const rooms = occupiedRooms(p.data);
+        out.payToday = payDayToday(rooms, today);
+        const due = expiryDue(rooms, today, await getExpiryStages());
+        out.expiring = due.items;
+        pendingStages = due.stages;
       }
     }
   } catch { /* LeaseLog 없음 */ }
@@ -75,6 +97,7 @@ export async function sendDigestIfDue(now = new Date()): Promise<boolean> {
   if (!perm.granted) return false;
   // 먼저 표시해 두어 동시에 두 번 실행돼도 한 번만 보낸다
   await setDigestSettings({ ...s, lastSent: ymd(now) });
+  pendingStages = null;
   const d = buildDigest(await gatherDigestInput(now));
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(CHANNEL, { name: '오늘의 요약', importance: AndroidImportance.DEFAULT });
@@ -83,5 +106,6 @@ export async function sendDigestIfDue(now = new Date()): Promise<boolean> {
     content: { title: d.title, body: d.body, data: { type: 'auto_digest' } },
     trigger: { channelId: CHANNEL },
   });
+  if (pendingStages) await kvSet(STAGES_KEY, JSON.stringify(pendingStages));
   return true;
 }

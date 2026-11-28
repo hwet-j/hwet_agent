@@ -7,6 +7,10 @@ export interface DigestInput {
   events: { title: string; start: string; allDay?: boolean }[] | null;
   /** RoutineLog 오늘 남은(아직·놓친) 약·루틴 */
   routinesLeft: { routine: string; slot?: string; status: 'pending' | 'overdue' }[] | null;
+  /** 계약 만기 임박(단계에 새로 들어선 호실) */
+  expiring?: { where: string; daysLeft: number }[] | null;
+  /** 오늘이 납부일인 호실 */
+  payToday?: string[] | null;
 }
 
 const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`;
@@ -32,6 +36,15 @@ export function buildDigest(i: DigestInput): { title: string; body: string; empt
     const over = i.unpaid.filter((u) => u.overdue).length;
     const shown = i.unpaid.slice(0, 3).map((u) => [u.building, u.room].filter(Boolean).join(' '));
     lines.push(`월세 미납 ${i.unpaid.length}건${over ? `(연체 ${over})` : ''} · ${won(total)}: ${shown.join(', ')}${i.unpaid.length > 3 ? ' …' : ''}`);
+  }
+
+  if (i.payToday?.length) {
+    lines.push(`오늘 월세 납부일: ${i.payToday.slice(0, 4).join(', ')}${i.payToday.length > 4 ? ` 외 ${i.payToday.length - 4}호` : ''}`);
+  }
+
+  if (i.expiring?.length) {
+    const shown = i.expiring.slice(0, 3).map((e) => `${e.where} ${e.daysLeft === 0 ? '오늘 만기' : `D-${e.daysLeft}`}`);
+    lines.push(`계약 만기 임박: ${shown.join(' · ')}${i.expiring.length > 3 ? ` 외 ${i.expiring.length - 3}건` : ''}`);
   }
 
   if (!lines.length) return { title: '오늘의 요약', body: '오늘은 챙길 일정·복약·미납이 없어요.', empty: true };

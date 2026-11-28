@@ -2,6 +2,8 @@ import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 
 import { sendDigestIfDue } from './digest';
+import { syncLeaseCalendar } from './leaseCalendar';
+import { sendMissedIfAny } from './missed';
 
 export const AUTO_TASK = 'auto-digest';
 
@@ -9,6 +11,8 @@ export const AUTO_TASK = 'auto-digest';
 TaskManager.defineTask(AUTO_TASK, async () => {
   try {
     await sendDigestIfDue();
+    await syncLeaseCalendar().catch(() => {});
+    await sendMissedIfAny().catch(() => {});
     return BackgroundTask.BackgroundTaskResult.Success;
   } catch {
     return BackgroundTask.BackgroundTaskResult.Failed;
