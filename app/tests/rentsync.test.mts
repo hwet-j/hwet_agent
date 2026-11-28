@@ -40,3 +40,8 @@ test('금액·날짜·호실이 다르면 req_id 도 다르다', () => {
   const ids = [base, { ...base, amount: 101 }, { ...base, date: '2026-11-06' }, { ...base, room: '102' }].map((r) => buildRentAdds([r])[0].req_id);
   assert.equal(new Set(ids).size, 4);
 });
+
+test('가계부 앱(src/lib/rentSync.ts)과 같은 req_id 를 만든다 (고정 값)', () => {
+  const a = buildRentAdds([{ date: '2026-11-05', building: 'A', room: '101', amount: 450000 }])[0];
+  assert.equal(a.req_id, 'rent:20261105:q1k1pu:1');
+});
