@@ -9,6 +9,8 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { syncAutoTask } from '@/automation/background';
 import { getDigestSettings, setDigestSettings } from '@/automation/digest';
+import { getMissedReminder, setMissedReminder } from '@/automation/missed';
+import { getLeaseCalendar, setLeaseCalendar, syncLeaseCalendar } from '@/automation/leaseCalendar';
 import * as Notifications from 'expo-notifications';
 import { applyBriefing } from '@/core/briefing';
 import { kvSet } from '@/core/db';
@@ -43,6 +45,8 @@ export default function SettingsScreen() {
   const [autoRecord, setAutoRecord] = useState(false);
   const [brief, setBrief] = useState(true);
   const [voice, setVoice] = useState<VoiceSettings>({ tts: true, relisten: false, openListen: false });
+  const [missed, setMissed] = useState(false);
+  const [leaseCal, setLeaseCal] = useState(false);
   const [dgEnabled, setDgEnabled] = useState(false);
   const [dgHour, setDgHour] = useState('8');
   const [dgMinute, setDgMinute] = useState('0');
@@ -58,6 +62,8 @@ export default function SettingsScreen() {
     (async () => {
       setHasKey(!!(await getApiKey()));
       setModelText(await getModel());
+      setLeaseCal(await getLeaseCalendar());
+      setMissed(await getMissedReminder());
       const dg = await getDigestSettings();
       setDgEnabled(dg.enabled);
       setDgHour(String(dg.hour));
@@ -106,6 +112,33 @@ export default function SettingsScreen() {
     await setBriefing(b);
   };
 
+  const toggleLeaseCal = async (on: boolean) => {
+    if (on && !(await isGoogleConnected())) {
+      Alert.alert('구글 계정이 필요해요', '아래 "구글 캘린더 연결"에서 먼저 구글 계정을 연결해 주세요.');
+      return;
+    }
+    await setLeaseCalendar(on);
+    await syncAutoTask(on || dgEnabled || missed).catch(() => {});
+    setLeaseCal(on);
+    if (on) {
+      const n = await syncLeaseCalendar().catch(() => 0);
+      Alert.alert('월세 만기 일정', n > 0 ? `계약 만기 ${n}건을 구글 캘린더에 등록했어요.` : '새로 등록할 만기 일정이 없어요. (LeaseLog 를 한 번 열어 두면 읽어 와요)');
+    }
+  };
+
+  const toggleMissed = async (on: boolean) => {
+    if (on) {
+      const p = await Notifications.requestPermissionsAsync();
+      if (!p.granted) {
+        Alert.alert('알림 권한이 꺼져 있어요', '휴대폰 설정에서 알림을 허용해 주세요.');
+        return;
+      }
+    }
+    await setMissedReminder(on);
+    await syncAutoTask(on || dgEnabled).catch(() => {});
+    setMissed(on);
+  };
+
   const saveDigest = async (enabled: boolean) => {
     if (enabled) {
       const p = await Notifications.requestPermissionsAsync();
@@ -117,7 +150,7 @@ export default function SettingsScreen() {
     const prev = await getDigestSettings();
     const next = { ...prev, enabled, hour: clamp(dgHour, 23), minute: clamp(dgMinute, 59) };
     await setDigestSettings(next);
-    await syncAutoTask(enabled).catch(() => {});
+    await syncAutoTask(enabled || missed || leaseCal).catch(() => {});
     setDgEnabled(enabled);
     setDgHour(String(next.hour));
     setDgMinute(String(next.minute));
@@ -246,6 +279,20 @@ export default function SettingsScreen() {
               <ThemedText>분</ThemedText>
               <View style={styles.flex} />
               {dgEnabled && <Button title="시각 적용" kind="soft" onPress={() => saveDigest(true)} />}
+            </View>
+          </Section>
+
+          <Section title="놓친 복약 재알림 (자동)" hint="RoutineLog 의 약·영양제를 정한 시각에서 30분이 지나도 체크하지 않았다면 한 번 더 알려요. 항목마다 한 번만 알리고, 시각이 정해진 항목만 해당돼요. 몇 분 늦을 수 있어요.">
+            <View style={styles.row}>
+              <ThemedText style={styles.flex}>놓친 복약 알림 받기</ThemedText>
+              <Switch value={missed} onValueChange={toggleMissed} />
+            </View>
+          </Section>
+
+          <Section title="월세 계약 만기를 구글 캘린더에 (자동)" hint="LeaseLog 계약 만기일(1년 안)을 구글 캘린더에 종일 일정으로 한 번씩 등록해요. 이미 등록한 건은 다시 만들지 않고, 지운 일정도 되살리지 않아요. 세입자 이름은 넣지 않아요.">
+            <View style={styles.row}>
+              <ThemedText style={styles.flex}>만기 일정 자동 등록</ThemedText>
+              <Switch value={leaseCal} onValueChange={toggleLeaseCal} />
             </View>
           </Section>
 
