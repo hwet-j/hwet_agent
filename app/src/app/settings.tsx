@@ -7,6 +7,9 @@ import { Button, Field, Section } from '@/components/ui';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
+import { syncAutoTask } from '@/automation/background';
+import { getDigestSettings, setDigestSettings } from '@/automation/digest';
+import * as Notifications from 'expo-notifications';
 import { applyBriefing } from '@/core/briefing';
 import { kvSet } from '@/core/db';
 import { getAutoRecord } from '@/integrations/flowledger/tools';
@@ -40,6 +43,9 @@ export default function SettingsScreen() {
   const [autoRecord, setAutoRecord] = useState(false);
   const [brief, setBrief] = useState(true);
   const [voice, setVoice] = useState<VoiceSettings>({ tts: true, relisten: false, openListen: false });
+  const [dgEnabled, setDgEnabled] = useState(false);
+  const [dgHour, setDgHour] = useState('8');
+  const [dgMinute, setDgMinute] = useState('0');
   const googleLogin = useGoogleLogin();
 
   useEffect(() => {
@@ -52,6 +58,10 @@ export default function SettingsScreen() {
     (async () => {
       setHasKey(!!(await getApiKey()));
       setModelText(await getModel());
+      const dg = await getDigestSettings();
+      setDgEnabled(dg.enabled);
+      setDgHour(String(dg.hour));
+      setDgMinute(String(dg.minute));
       const b = await getBriefing();
       setBrEnabled(b.enabled);
       setHour(String(b.hour));
@@ -94,6 +104,23 @@ export default function SettingsScreen() {
     setHour(String(b.hour));
     setMinute(String(b.minute));
     await setBriefing(b);
+  };
+
+  const saveDigest = async (enabled: boolean) => {
+    if (enabled) {
+      const p = await Notifications.requestPermissionsAsync();
+      if (!p.granted) {
+        Alert.alert('알림 권한이 꺼져 있어요', '요약 알림을 받으려면 휴대폰 설정에서 알림을 허용해 주세요.');
+        return;
+      }
+    }
+    const prev = await getDigestSettings();
+    const next = { ...prev, enabled, hour: clamp(dgHour, 23), minute: clamp(dgMinute, 59) };
+    await setDigestSettings(next);
+    await syncAutoTask(enabled).catch(() => {});
+    setDgEnabled(enabled);
+    setDgHour(String(next.hour));
+    setDgMinute(String(next.minute));
   };
 
   return (
@@ -205,6 +232,21 @@ export default function SettingsScreen() {
             <ThemedText type="small" themeColor="textSecondary">
               {`• 홈/전원 버튼을 길게 눌러 부르기: 휴대폰 설정 → 앱 → 기본 앱 선택 → 디지털 어시스턴트 앱에서 "hwet-assistant"를 고르세요 (기종마다 메뉴 이름이 조금 달라요).\n• 알림창을 내려 편집(연필) → "비서에게 말하기" 타일을 끌어 넣으면 한 번에 들어요.\n• 빅스비·구글 어시스턴트로 "비서 열어줘"라고 하면 앱이 열리는데, 위의 "앱을 열면 바로 듣기"를 켜 두면 바로 듣기 시작해요.`}
             </ThemedText>
+          </Section>
+
+          <Section title="오늘의 요약 알림 (자동)" hint="정한 시각 이후 한 번, 오늘 일정·남은 복약과 루틴·월세 미납을 알림으로 보내 드려요. AI를 쓰지 않아 비용이 들지 않아요. 안드로이드 특성상 정확히 그 시각이 아니라 몇 분~수십 분 늦을 수 있어요.">
+            <View style={styles.row}>
+              <ThemedText style={styles.flex}>요약 알림 받기</ThemedText>
+              <Switch value={dgEnabled} onValueChange={saveDigest} />
+            </View>
+            <View style={styles.row}>
+              <Field style={styles.time} value={dgHour} onChangeText={setDgHour} keyboardType="number-pad" maxLength={2} />
+              <ThemedText>시</ThemedText>
+              <Field style={styles.time} value={dgMinute} onChangeText={setDgMinute} keyboardType="number-pad" maxLength={2} />
+              <ThemedText>분</ThemedText>
+              <View style={styles.flex} />
+              {dgEnabled && <Button title="시각 적용" kind="soft" onPress={() => saveDigest(true)} />}
+            </View>
           </Section>
 
           <Section title="아침 브리핑 (선택)" hint="켜면 매일 정한 시각에 알림이 오고, 알림을 누르면 비서가 오늘 할 일과 메모를 정리해 줘요.">
