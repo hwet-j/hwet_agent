@@ -10,6 +10,7 @@ import { Spacing } from '@/constants/theme';
 import { syncAutoTask } from '@/automation/background';
 import { getDigestSettings, setDigestSettings } from '@/automation/digest';
 import { getMissedReminder, setMissedReminder } from '@/automation/missed';
+import { getUpdateNotify, setUpdateNotify } from '@/automation/update';
 import { getLeaseCalendar, setLeaseCalendar, syncLeaseCalendar } from '@/automation/leaseCalendar';
 import * as Notifications from 'expo-notifications';
 import { applyBriefing } from '@/core/briefing';
@@ -45,6 +46,7 @@ export default function SettingsScreen() {
   const [autoRecord, setAutoRecord] = useState(false);
   const [brief, setBrief] = useState(true);
   const [voice, setVoice] = useState<VoiceSettings>({ tts: true, relisten: false, openListen: false });
+  const [updNotify, setUpdNotify] = useState(false);
   const [missed, setMissed] = useState(false);
   const [leaseCal, setLeaseCal] = useState(false);
   const [dgEnabled, setDgEnabled] = useState(false);
@@ -64,6 +66,7 @@ export default function SettingsScreen() {
       setModelText(await getModel());
       setLeaseCal(await getLeaseCalendar());
       setMissed(await getMissedReminder());
+      setUpdNotify(await getUpdateNotify());
       const dg = await getDigestSettings();
       setDgEnabled(dg.enabled);
       setDgHour(String(dg.hour));
@@ -118,7 +121,7 @@ export default function SettingsScreen() {
       return;
     }
     await setLeaseCalendar(on);
-    await syncAutoTask(on || dgEnabled || missed).catch(() => {});
+    await syncAutoTask(on || dgEnabled || missed || updNotify).catch(() => {});
     setLeaseCal(on);
     if (on) {
       const n = await syncLeaseCalendar().catch(() => 0);
@@ -135,8 +138,21 @@ export default function SettingsScreen() {
       }
     }
     await setMissedReminder(on);
-    await syncAutoTask(on || dgEnabled).catch(() => {});
+    await syncAutoTask(on || dgEnabled || leaseCal || updNotify).catch(() => {});
     setMissed(on);
+  };
+
+  const toggleUpdate = async (on: boolean) => {
+    if (on) {
+      const p = await Notifications.requestPermissionsAsync();
+      if (!p.granted) {
+        Alert.alert('알림 권한이 꺼져 있어요', '휴대폰 설정에서 알림을 허용해 주세요.');
+        return;
+      }
+    }
+    await setUpdateNotify(on);
+    await syncAutoTask(on || dgEnabled || missed || leaseCal).catch(() => {});
+    setUpdNotify(on);
   };
 
   const saveDigest = async (enabled: boolean) => {
@@ -150,7 +166,7 @@ export default function SettingsScreen() {
     const prev = await getDigestSettings();
     const next = { ...prev, enabled, hour: clamp(dgHour, 23), minute: clamp(dgMinute, 59) };
     await setDigestSettings(next);
-    await syncAutoTask(enabled || missed || leaseCal).catch(() => {});
+    await syncAutoTask(enabled || missed || leaseCal || updNotify).catch(() => {});
     setDgEnabled(enabled);
     setDgHour(String(next.hour));
     setDgMinute(String(next.minute));
@@ -279,6 +295,13 @@ export default function SettingsScreen() {
               <ThemedText>분</ThemedText>
               <View style={styles.flex} />
               {dgEnabled && <Button title="시각 적용" kind="soft" onPress={() => saveDigest(true)} />}
+            </View>
+          </Section>
+
+          <Section title="새 버전 알림 (자동)" hint="GitHub 에 새 비서 APK 가 올라오면 한 번 알려 드려요. 알림을 누르면 받는 곳이 열리고, 설치하면 데이터는 그대로 유지돼요. 다른 앱(LeaseLog·가계부 등)은 같은 페이지에 모여 있어요.">
+            <View style={styles.row}>
+              <ThemedText style={styles.flex}>새 버전 알림 받기</ThemedText>
+              <Switch value={updNotify} onValueChange={toggleUpdate} />
             </View>
           </Section>
 

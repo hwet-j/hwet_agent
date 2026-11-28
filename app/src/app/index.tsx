@@ -31,6 +31,7 @@ import { logActivity } from '@/core/activity';
 import { pickPhoto, takePhoto, type Attachment } from '@/core/image';
 import { getVoiceSettings, type VoiceSettings } from '@/voice/settings';
 import { BRIEFING_PROMPT } from '@/core/briefing';
+import { RELEASES_PAGE } from '@/automation/update';
 import { getApiKey, getBriefReply, getModel } from '@/core/settings';
 import { loadConnectorTools } from '@/connectors/registry';
 import { allIntegrationTools, integrationTools } from '@/integrations';
@@ -277,6 +278,11 @@ export default function ChatScreen() {
     if (lastResponse.notification.request.content.data?.type === 'briefing') {
       handledNotification.current = id;
       queueMicrotask(() => send(BRIEFING_PROMPT));
+    }
+    // 새 버전 알림을 누르면 받는 곳(릴리스 페이지)을 연다. 주소는 코드에 고정된 값만 허용한다.
+    if (lastResponse.notification.request.content.data?.type === 'update') {
+      handledNotification.current = id;
+      Linking.openURL(RELEASES_PAGE).catch(() => {});
     }
   }, [lastResponse, send]);
 
