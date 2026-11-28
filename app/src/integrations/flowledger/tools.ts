@@ -15,7 +15,7 @@ const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.ge
 const newReqId = () => `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
 /** 제공자 호출 → 파싱된 JSON. 실패는 사람이 읽을 오류로 */
-async function call<T = any>(method: string, arg: unknown): Promise<T> {
+export async function call<T = any>(method: string, arg: unknown): Promise<T> {
   const r = await callProvider(AUTHORITY, method, arg);
   if (r.error) {
     if (r.error === 'unavailable') throw new Error('FlowLedger 앱을 찾을 수 없어요. 설치했는지, 이 연동을 지원하는 최신 버전인지 확인해 주세요.');
